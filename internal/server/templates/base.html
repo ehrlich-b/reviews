@@ -10,53 +10,73 @@
             --bg: #0d1117;
             --bg-surface: #161b22;
             --bg-card: #1c2128;
-            --text: #c9d1d9;
+            --bg-hover: #1f252d;
+            --text: #e6edf3;
+            --text-secondary: #b1bac4;
             --text-muted: #8b949e;
             --text-dim: #6e7681;
             --green: #3fb950;
+            --green-muted: #2ea043;
             --red: #f85149;
+            --red-muted: #da3633;
             --yellow: #d29922;
             --blue: #58a6ff;
+            --purple: #bc8cff;
             --border: #30363d;
-            --link: #58a6ff;
+            --border-subtle: #21262d;
         }
         [data-theme="light"] {
             --bg: #f6f8fa;
             --bg-surface: #ffffff;
             --bg-card: #f6f8fa;
+            --bg-hover: #eef1f4;
             --text: #1f2328;
+            --text-secondary: #424a53;
             --text-muted: #656d76;
             --text-dim: #8b949e;
             --green: #1a7f37;
+            --green-muted: #1a7f37;
             --red: #cf222e;
+            --red-muted: #cf222e;
             --yellow: #9a6700;
             --blue: #0969da;
+            --purple: #8250df;
             --border: #d0d7de;
-            --link: #0969da;
+            --border-subtle: #e1e4e8;
         }
         @media (prefers-color-scheme: light) {
             :root:not([data-theme="dark"]) {
                 --bg: #f6f8fa;
                 --bg-surface: #ffffff;
                 --bg-card: #f6f8fa;
+                --bg-hover: #eef1f4;
                 --text: #1f2328;
+                --text-secondary: #424a53;
                 --text-muted: #656d76;
                 --text-dim: #8b949e;
                 --green: #1a7f37;
+                --green-muted: #1a7f37;
                 --red: #cf222e;
+                --red-muted: #cf222e;
                 --yellow: #9a6700;
                 --blue: #0969da;
+                --purple: #8250df;
                 --border: #d0d7de;
-                --link: #0969da;
+                --border-subtle: #e1e4e8;
             }
         }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: var(--bg);
             color: var(--text);
             line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
         }
+
+        /* Header */
         .header {
             display: flex;
             align-items: center;
@@ -65,18 +85,20 @@
             border-bottom: 1px solid var(--border);
             background: var(--bg-surface);
         }
-        .header h1 { font-size: 18px; font-weight: 600; }
+        .header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
         .header-actions { display: flex; gap: 8px; align-items: center; }
         .btn {
             background: var(--bg-card);
-            color: var(--text);
+            color: var(--text-secondary);
             border: 1px solid var(--border);
-            padding: 5px 12px;
+            padding: 5px 14px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: border-color 0.15s, color 0.15s;
         }
-        .btn:hover { border-color: var(--text-dim); }
+        .btn:hover { border-color: var(--text-dim); color: var(--text); }
         .theme-toggle {
             background: none;
             border: none;
@@ -84,195 +106,335 @@
             cursor: pointer;
             font-size: 18px;
             padding: 4px;
+            transition: color 0.15s;
         }
-        main { max-width: 1100px; margin: 0 auto; padding: 24px; }
-        .section { margin-bottom: 32px; }
-        .section-header {
-            font-size: 13px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+        .theme-toggle:hover { color: var(--text); }
+
+        /* Viewer bar */
+        .viewer-info {
+            font-size: 12px;
             color: var(--text-muted);
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border);
-        }
-        .section-header .count { font-weight: 400; }
-        .ticket-group {
-            margin-bottom: 16px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            overflow: hidden;
-            background: var(--bg-surface);
-        }
-        .ticket-header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 8px 16px;
-            background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-            font-size: 13px;
-        }
-        .ticket-key {
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-weight: 600;
-            color: var(--blue);
-        }
-        .ticket-meta { color: var(--text-muted); }
-        .ticket-activity {
-            margin-left: auto;
-            color: var(--text-dim);
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 12px;
-        }
-        .pr-row {
-            display: grid;
-            grid-template-columns: 90px 1fr auto;
-            grid-template-rows: auto auto;
-            gap: 1px 12px;
-            padding: 8px 16px;
-            border-bottom: 1px solid var(--border);
-            text-decoration: none;
-            color: var(--text);
-        }
-        .pr-row:last-child { border-bottom: none; }
-        .pr-row:hover { background: var(--bg-card); }
-        .pr-repo {
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 12px;
-            color: var(--text-muted);
-            grid-row: 1 / 3;
-            align-self: center;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .pr-title-line {
-            display: flex;
-            align-items: baseline;
             gap: 6px;
-            min-width: 0;
         }
-        .pr-number {
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 13px;
-            color: var(--text-dim);
-            flex-shrink: 0;
-        }
-        .pr-title {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .pr-right {
-            grid-row: 1 / 3;
-            align-self: center;
-            text-align: right;
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 12px;
-            color: var(--text-dim);
-        }
-        .pr-meta {
+        .viewer-info .btn { padding: 2px 8px; font-size: 11px; }
+        .viewer-input {
             display: flex;
             align-items: center;
-            gap: 12px;
-            font-size: 12px;
-            color: var(--text-muted);
+            gap: 4px;
         }
-        .pr-author { display: flex; align-items: center; gap: 4px; }
-        .avatar { width: 16px; height: 16px; border-radius: 50%; }
-        .ci-pass { color: var(--green); }
-        .ci-fail { color: var(--red); }
-        .ci-pending { color: var(--yellow); }
-        .your-pr-row {
+        .viewer-input input {
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            width: 140px;
+        }
+        .viewer-input .btn { padding: 3px 10px; font-size: 11px; }
+
+        /* Filter toolbar - sticky, single row */
+        .filter-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 8px 16px;
+            padding: 6px 24px;
+            background: var(--bg-surface);
             border-bottom: 1px solid var(--border);
-            text-decoration: none;
-            color: var(--text);
+            overflow: hidden;
         }
-        .your-pr-row:last-child { border-bottom: none; }
-        .your-pr-row:hover { background: var(--bg-card); }
+        .repo-pills {
+            display: flex;
+            gap: 3px;
+            overflow-x: auto;
+            flex-shrink: 1;
+            min-width: 0;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .repo-pills::-webkit-scrollbar { display: none; }
+        .repo-pill {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 10px;
+            padding: 1px 7px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .repo-pill.active {
+            background: var(--blue);
+            color: #fff;
+            border-color: var(--blue);
+        }
+        .filter-sep {
+            width: 1px;
+            height: 16px;
+            background: var(--border);
+            flex-shrink: 0;
+        }
+        .filter-select {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+        .filter-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .filter-checkbox input { cursor: pointer; }
+
+        /* Layout */
+        main { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+        .section { margin-bottom: 28px; }
+        .section-header {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        .section-header .count { font-weight: 400; color: var(--text-dim); }
+
+        /* Table */
+        .pr-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .pr-table thead th {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-dim);
+            text-align: left;
+            padding: 4px 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .pr-table td {
+            padding: 5px 8px;
+            font-size: 13px;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pr-table td.cell-actions {
+            overflow: visible;
+            text-overflow: clip;
+        }
+
+        /* Ticket cards */
+        .ticket-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--bg-surface);
+            margin-bottom: 10px;
+        }
+        .ticket-card .pr-table { margin: 0; }
+        .ticket-card .pr-row:last-child td { border-bottom: none; }
+        .ticket-header {
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 12px;
+        }
+        .ticket-key {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-weight: 600;
+            font-size: 11px;
+            color: var(--blue);
+        }
+        .ticket-meta {
+            color: var(--text-dim);
+            font-size: 11px;
+            margin-left: 6px;
+        }
+        .section-header-table { margin-bottom: 0; }
+        .section-header-table thead th { border-bottom: none; }
+        .section-cards { margin-top: 6px; }
+        .loc-add { color: var(--green); }
+        .loc-del { color: var(--red); }
+
+        /* PR row */
+        .pr-row td {
+            border-bottom: 1px solid var(--border-subtle);
+            transition: background 0.1s;
+        }
+        .pr-row:hover td { background: var(--bg-hover); }
+        .cell-repo {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .cell-number a, .cell-title a {
+            color: var(--text);
+            text-decoration: none;
+        }
+        .cell-number a:hover, .cell-title a:hover { color: var(--blue); }
+        .cell-number {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 12px;
+        }
+        .cell-number a { color: var(--text-dim); }
+        .cell-author {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .avatar { width: 16px; height: 16px; border-radius: 50%; vertical-align: middle; margin-right: 2px; }
+        .cell-loc {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 11px;
+        }
+        .cell-age {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        /* CI dot */
+        .ci-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .ci-dot.ci-pass { background: var(--green); }
+        .ci-dot.ci-fail { background: var(--red); }
+        .ci-dot.ci-pending { background: var(--yellow); }
+
+        /* Action buttons */
+        .btn-reviewed, .btn-dismiss {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 4px;
+            border: 1px solid;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .btn-reviewed {
+            border-color: var(--green-muted);
+            color: #fff;
+            background: var(--green-muted);
+            margin-right: 4px;
+        }
+        .btn-reviewed:hover { background: var(--green); }
+        .btn-dismiss {
+            border-color: var(--border);
+            color: var(--text-muted);
+            background: var(--bg-card);
+            padding: 4px 12px;
+        }
+        .btn-dismiss:hover { background: rgba(248,81,73,0.1); color: var(--red); border-color: var(--red-muted); }
+        .btn-undo {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: var(--bg-card);
+        }
+        .btn-undo:hover { color: var(--text); border-color: var(--text-dim); }
+
+        /* Action states */
+        .pr-row.action-reviewed td,
+        .pr-row.action-dismissed td { opacity: 0.3; }
+        .ticket-card.action-hidden { display: none; }
+        .pr-row.filter-hidden { display: none; }
+        .ticket-card.filter-hidden { display: none; }
+        .your-pr-row.filter-hidden { display: none; }
+
+        /* Sortable columns */
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { color: var(--text-secondary); }
+        .sortable::after { content: ''; margin-left: 3px; font-size: 7px; }
+        .sortable.sort-asc::after { content: '\25B2'; }
+        .sortable.sort-desc::after { content: '\25BC'; }
+
+        /* Owner labels in pill bar */
+        .owner-label {
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-dim);
+            white-space: nowrap;
+            flex-shrink: 0;
+            padding: 0 2px;
+            cursor: pointer;
+        }
+        .owner-label:not(:first-child) { margin-left: 6px; }
+
+        /* Team toggle */
+        .org-toggle {
+            font-size: 11px;
+            padding: 2px 8px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .org-toggle.active {
+            background: var(--blue);
+            color: #fff;
+            border-color: var(--blue);
+        }
+
+        /* Your PRs */
+        .your-pr-row td {
+            border-bottom: 1px solid var(--border-subtle);
+            transition: background 0.1s;
+        }
+        .your-pr-row:hover td { background: var(--bg-hover); }
         .badge {
             font-size: 11px;
             padding: 2px 8px;
             border-radius: 12px;
-            flex-shrink: 0;
             font-weight: 500;
-        }
-        .badge-approved { background: rgba(63,185,80,0.15); color: var(--green); }
-        .badge-changes { background: rgba(210,153,34,0.15); color: var(--yellow); }
-        .badge-waiting { background: rgba(139,148,158,0.1); color: var(--text-dim); }
-        .your-pr-repo {
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 12px;
-            color: var(--text-muted);
-            flex-shrink: 0;
-            width: 90px;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            text-align: center;
             white-space: nowrap;
+            display: inline-block;
         }
-        .your-pr-number {
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 13px;
-            color: var(--text-dim);
-            flex-shrink: 0;
-        }
-        .your-pr-title {
-            flex: 1;
-            min-width: 0;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .your-pr-time {
-            font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-            font-size: 12px;
-            color: var(--text-dim);
-            flex-shrink: 0;
-        }
-        .subsection-label {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-dim);
-            padding: 6px 16px;
-            background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-        }
+        .badge-approved { background: rgba(63,185,80,0.12); color: var(--green); }
+        .badge-changes { background: rgba(210,153,34,0.12); color: var(--yellow); }
+        .badge-waiting { background: rgba(139,148,158,0.08); color: var(--text-dim); }
+
         .empty-state {
             text-align: center;
-            padding: 32px;
+            padding: 40px 24px;
             color: var(--text-dim);
             font-size: 14px;
         }
-        .filters {
-            display: none;
-            padding: 10px 24px;
-            background: var(--bg-surface);
-            border-bottom: 1px solid var(--border);
-            gap: 16px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .filters.open { display: flex; }
-        .filter-group {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-        .filter-group label { cursor: pointer; }
+
+        /* Footer */
         .footer {
-            padding: 12px 24px;
+            padding: 16px 24px;
             border-top: 1px solid var(--border);
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-dim);
             text-align: center;
         }
@@ -282,24 +444,32 @@
     <div class="header">
         <h1>reviews</h1>
         <div class="header-actions">
+            <span class="viewer-info" id="viewer-info" style="display:none">
+                <span id="viewer-label"></span>
+                <button class="btn" onclick="editViewer()">change</button>
+            </span>
+            <div class="viewer-input" id="viewer-input" style="display:none">
+                <input type="text" id="viewer-name" placeholder="GitHub username" onkeydown="if(event.key==='Enter')setViewer()">
+                <button class="btn" onclick="setViewer()">Set</button>
+            </div>
             <button class="btn" onclick="doSync()" id="sync-btn">Refresh</button>
-            <button class="btn" onclick="toggleFilters()">Filters</button>
             <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#9681;</button>
         </div>
     </div>
-    <div class="filters" id="filters">
-        <div class="filter-group">
-            <input type="checkbox" id="f-ci" onchange="saveFilters()">
-            <label for="f-ci">Hide failing CI</label>
+    <div class="filter-toolbar" id="filter-toolbar">
+        <button class="btn org-toggle" id="team-toggle" onclick="toggleTeam()">Team</button>
+        <div class="filter-sep"></div>
+        <div class="repo-pills" id="repo-pills">
+            {{range $g := .RepoGroups}}<span class="owner-label" data-owner="{{$g.Owner}}" onclick="toggleOwner(this)">{{$g.Owner}}</span>{{range $g.Repos}}<button class="repo-pill active" data-repo="{{.}}" data-owner="{{$g.Owner}}" onclick="toggleRepo(this)">{{.}}</button>{{end}}{{end}}
         </div>
-        <div class="filter-group">
-            <input type="checkbox" id="f-approved" onchange="saveFilters()">
-            <label for="f-approved">Hide approved</label>
-        </div>
-        <div class="filter-group">
-            <input type="checkbox" id="f-drafts" checked onchange="saveFilters()">
-            <label for="f-drafts">Hide drafts</label>
-        </div>
+        <div class="filter-sep"></div>
+        <select class="filter-select" id="f-ci" onchange="applyAllFilters()">
+            <option value="all">CI: All</option>
+            <option value="passing">CI: Pass</option>
+            <option value="failing">CI: Fail</option>
+        </select>
+        <div class="filter-sep"></div>
+        <label class="filter-checkbox"><input type="checkbox" id="f-drafts" checked onchange="applyAllFilters()"> Drafts</label>
     </div>
     {{template "content" .}}
     <div class="footer">
@@ -308,6 +478,8 @@
     <script>
     (function(){
         var LS = localStorage;
+
+        // Theme
         function getTheme(){ return LS.getItem('reviews-theme')||'auto'; }
         function setTheme(t){
             LS.setItem('reviews-theme',t);
@@ -321,50 +493,522 @@
         };
         setTheme(getTheme());
 
-        window.doSync = function(){
-            var btn=document.getElementById('sync-btn');
-            btn.textContent='Syncing...'; btn.disabled=true;
-            fetch('/api/sync',{method:'POST'})
-                .then(function(r){
-                    if(r.ok) location.reload();
-                    else r.text().then(function(t){ btn.textContent='Failed'; setTimeout(function(){ btn.textContent='Refresh'; btn.disabled=false; },2000); });
-                })
-                .catch(function(){ btn.textContent='Failed'; setTimeout(function(){ btn.textContent='Refresh'; btn.disabled=false; },2000); });
-        };
-        window.toggleFilters = function(){
-            document.getElementById('filters').classList.toggle('open');
-        };
-        function loadFilters(){
-            try{
-                var f=JSON.parse(LS.getItem('reviews-filters')||'{}');
-                document.getElementById('f-ci').checked=!!f.ci;
-                document.getElementById('f-approved').checked=!!f.approved;
-                document.getElementById('f-drafts').checked=f.drafts!==false;
-            }catch(e){}
-            applyFilters();
+        // Viewer management
+        var VIEWER_KEY = 'reviews-viewer';
+        function getViewer(){ return LS.getItem(VIEWER_KEY)||''; }
+
+        function initViewer(){
+            var viewer = getViewer();
+            var params = new URLSearchParams(location.search);
+            if(viewer){
+                if(params.get('viewer') !== viewer){
+                    params.set('viewer', viewer);
+                    location.replace(location.pathname + '?' + params.toString());
+                    return false;
+                }
+                document.getElementById('viewer-label').textContent = 'viewing as ' + viewer;
+                document.getElementById('viewer-info').style.display = '';
+            } else {
+                if(params.has('viewer')){
+                    params.delete('viewer');
+                    var u = params.toString() ? location.pathname + '?' + params.toString() : location.pathname;
+                    location.replace(u);
+                    return false;
+                }
+                document.getElementById('viewer-input').style.display = '';
+            }
+            return true;
         }
-        window.saveFilters = function(){
-            var f={
-                ci:document.getElementById('f-ci').checked,
-                approved:document.getElementById('f-approved').checked,
-                drafts:document.getElementById('f-drafts').checked
-            };
-            LS.setItem('reviews-filters',JSON.stringify(f));
-            applyFilters();
+
+        window.setViewer = function(){
+            var name = document.getElementById('viewer-name').value.trim();
+            if(!name) return;
+            LS.setItem(VIEWER_KEY, name);
+            var params = new URLSearchParams(location.search);
+            params.set('viewer', name);
+            location.replace(location.pathname + '?' + params.toString());
         };
-        function applyFilters(){
-            var ci=document.getElementById('f-ci').checked;
-            var approved=document.getElementById('f-approved').checked;
-            var drafts=document.getElementById('f-drafts').checked;
-            document.querySelectorAll('[data-ci]').forEach(function(el){
-                var hide=false;
-                if(ci&&(el.dataset.ci==='failure'||el.dataset.ci==='error')) hide=true;
-                if(approved&&el.dataset.bucket==='approved') hide=true;
-                if(drafts&&el.dataset.draft==='true') hide=true;
-                el.style.display=hide?'none':'';
+
+        window.editViewer = function(){
+            document.getElementById('viewer-info').style.display = 'none';
+            document.getElementById('viewer-input').style.display = '';
+            document.getElementById('viewer-name').value = getViewer();
+            document.getElementById('viewer-name').focus();
+        };
+
+        // LocalStorage actions
+        var ACTIONS_KEY = 'reviews-actions';
+        function getActions(){
+            try{ return JSON.parse(LS.getItem(ACTIONS_KEY)||'{}'); }catch(e){ return {}; }
+        }
+        function saveActions(a){ LS.setItem(ACTIONS_KEY, JSON.stringify(a)); }
+
+        window.markReviewed = function(btn){
+            var row = btn.closest('.pr-row');
+            var actions = getActions();
+            actions[row.dataset.prKey] = {action:'reviewed', commit:row.dataset.commit};
+            saveActions(actions);
+            applyActions();
+        };
+
+        window.dismissPR = function(btn){
+            var row = btn.closest('.pr-row');
+            var actions = getActions();
+            actions[row.dataset.prKey] = {action:'dismissed', commit:''};
+            saveActions(actions);
+            applyActions();
+        };
+
+        window.undoAction = function(btn){
+            var row = btn.closest('.pr-row') || btn.closest('tr');
+            var key = row.dataset.prKey;
+            var actions = getActions();
+            delete actions[key];
+            saveActions(actions);
+            applyActions();
+        };
+
+        function applyActions(){
+            var actions = getActions();
+
+            // Cleanup: remove actions for prKeys not in DOM
+            var domKeys = {};
+            document.querySelectorAll('.pr-row[data-pr-key]').forEach(function(el){
+                domKeys[el.dataset.prKey] = true;
             });
+            var changed = false;
+            for(var k in actions){
+                if(!domKeys[k]){ delete actions[k]; changed = true; }
+            }
+            if(changed) saveActions(actions);
+
+            // Clear bottom sections
+            var reviewedBody = document.getElementById('reviewed-body');
+            var dismissedBody = document.getElementById('dismissed-body');
+            reviewedBody.innerHTML = '';
+            dismissedBody.innerHTML = '';
+
+            // Reset all cards
+            document.querySelectorAll('.ticket-card').forEach(function(card){
+                card.classList.remove('action-hidden');
+            });
+
+            // Process each PR row
+            document.querySelectorAll('.pr-row[data-pr-key]').forEach(function(row){
+                var key = row.dataset.prKey;
+                var act = actions[key];
+                var reviewed = row.querySelector('.btn-reviewed');
+                var dismiss = row.querySelector('.btn-dismiss');
+                var undo = row.querySelector('.btn-undo');
+                if(!reviewed || !dismiss || !undo) return;
+
+                // Reset
+                row.classList.remove('action-reviewed','action-dismissed');
+
+                if(!act){
+                    reviewed.style.display = '';
+                    dismiss.style.display = '';
+                    undo.style.display = 'none';
+                    return;
+                }
+
+                if(act.action === 'reviewed'){
+                    // Auto-clear if commit changed
+                    if(act.commit && row.dataset.commit && act.commit !== row.dataset.commit){
+                        delete actions[key];
+                        saveActions(actions);
+                        reviewed.style.display = '';
+                        dismiss.style.display = '';
+                        undo.style.display = 'none';
+                        return;
+                    }
+                    row.classList.add('action-reviewed');
+                    undo.textContent = 'Undo';
+                } else {
+                    row.classList.add('action-dismissed');
+                    undo.textContent = 'Undismiss';
+                }
+
+                reviewed.style.display = 'none';
+                dismiss.style.display = 'none';
+                undo.style.display = '';
+            });
+
+            // Hide fully-actioned cards and populate bottom sections
+            document.querySelectorAll('.ticket-card').forEach(function(card){
+                var rows = card.querySelectorAll('.pr-row[data-pr-key]');
+                if(rows.length === 0) return;
+                var allActioned = true;
+                rows.forEach(function(row){
+                    if(!actions[row.dataset.prKey]) allActioned = false;
+                });
+                if(!allActioned) return;
+
+                card.classList.add('action-hidden');
+                rows.forEach(function(row){
+                    var act = actions[row.dataset.prKey];
+                    if(!act) return;
+                    var clone = row.cloneNode(true);
+                    clone.classList.remove('action-reviewed','action-dismissed','filter-hidden');
+                    // Wire up undo on clone
+                    var undoBtn = clone.querySelector('.btn-undo');
+                    if(undoBtn){
+                        undoBtn.style.display = '';
+                        undoBtn.onclick = function(){ undoAction(undoBtn); };
+                    }
+                    var rb = clone.querySelector('.btn-reviewed');
+                    var db = clone.querySelector('.btn-dismiss');
+                    if(rb) rb.style.display = 'none';
+                    if(db) db.style.display = 'none';
+                    if(act.action === 'reviewed'){
+                        if(undoBtn) undoBtn.textContent = 'Undo Reviewed';
+                        reviewedBody.appendChild(clone);
+                    } else {
+                        if(undoBtn) undoBtn.textContent = 'Undismiss';
+                        dismissedBody.appendChild(clone);
+                    }
+                });
+            });
+
+            // Show/hide bottom sections
+            var rs = document.getElementById('reviewed-section');
+            var ds = document.getElementById('dismissed-section');
+            if(reviewedBody.children.length > 0){
+                rs.style.display = '';
+                document.getElementById('reviewed-count').textContent = '(' + reviewedBody.children.length + ')';
+            } else { rs.style.display = 'none'; }
+            if(dismissedBody.children.length > 0){
+                ds.style.display = '';
+                document.getElementById('dismissed-count').textContent = '(' + dismissedBody.children.length + ')';
+            } else { ds.style.display = 'none'; }
+
+            applyAllFilters();
         }
-        loadFilters();
+
+        // Sync with polling
+        var syncPollTimer = null;
+        window.doSync = function(){
+            var btn = document.getElementById('sync-btn');
+            btn.disabled = true;
+            fetch('/api/sync',{method:'POST'})
+                .then(function(r){ return r.json(); })
+                .then(function(data){
+                    btn.textContent = data.status === 'syncing' ? 'Syncing...' : 'Queued...';
+                    pollSync();
+                })
+                .catch(function(){
+                    btn.textContent = 'Failed';
+                    setTimeout(function(){ btn.textContent = 'Refresh'; btn.disabled = false; },2000);
+                });
+        };
+
+        function pollSync(){
+            if(syncPollTimer) clearInterval(syncPollTimer);
+            syncPollTimer = setInterval(function(){
+                fetch('/api/sync/status')
+                    .then(function(r){ return r.json(); })
+                    .then(function(data){
+                        if(data.status === 'idle'){
+                            clearInterval(syncPollTimer);
+                            syncPollTimer = null;
+                            location.reload();
+                        } else {
+                            document.getElementById('sync-btn').textContent = 'Syncing...';
+                        }
+                    });
+            }, 3000);
+        }
+
+        // Auto-refresh on new sync data
+        var lastKnownSync = null;
+        var bgPollTimer = null;
+        var lastHiddenAt = null;
+
+        function startBgPoll(){
+            if(bgPollTimer) clearInterval(bgPollTimer);
+            bgPollTimer = setInterval(checkForNewSync, 30000);
+        }
+
+        function stopBgPoll(){
+            if(bgPollTimer){ clearInterval(bgPollTimer); bgPollTimer = null; }
+        }
+
+        function checkForNewSync(){
+            fetch('/api/sync/status')
+                .then(function(r){ return r.json(); })
+                .then(function(data){
+                    if(lastKnownSync && data.lastSync && data.lastSync !== lastKnownSync){
+                        location.reload();
+                    }
+                });
+        }
+
+        function initBgPoll(){
+            fetch('/api/sync/status')
+                .then(function(r){ return r.json(); })
+                .then(function(data){
+                    lastKnownSync = data.lastSync || null;
+                    if(!document.hidden) startBgPoll();
+                });
+        }
+
+        document.addEventListener('visibilitychange', function(){
+            if(document.hidden){
+                lastHiddenAt = Date.now();
+                stopBgPoll();
+            } else {
+                var elapsed = lastHiddenAt ? Date.now() - lastHiddenAt : 0;
+                lastHiddenAt = null;
+                if(elapsed > 30000){
+                    location.reload();
+                } else {
+                    startBgPoll();
+                }
+            }
+        });
+
+        // Repo pill toggle
+        window.toggleRepo = function(btn){
+            btn.classList.toggle('active');
+            saveFilterState();
+            applyAllFilters();
+        };
+
+        // Filter state persistence
+        var FILTER_KEY = 'reviews-filters';
+        function saveFilterState(){
+            var activeRepos = [];
+            document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos.push(el.dataset.repo); });
+            var f = {
+                repos: activeRepos,
+                ci: document.getElementById('f-ci').value,
+                drafts: document.getElementById('f-drafts').checked,
+                teamOnly: document.getElementById('team-toggle').classList.contains('active')
+            };
+            LS.setItem(FILTER_KEY, JSON.stringify(f));
+        }
+        function loadFilterState(){
+            try{
+                var f = JSON.parse(LS.getItem(FILTER_KEY)||'{}');
+                if(f.repos){
+                    document.querySelectorAll('.repo-pill').forEach(function(el){
+                        if(f.repos.indexOf(el.dataset.repo) >= 0) el.classList.add('active');
+                        else el.classList.remove('active');
+                    });
+                }
+                if(f.ci) document.getElementById('f-ci').value = f.ci;
+                if(f.drafts !== undefined) document.getElementById('f-drafts').checked = f.drafts;
+                if(f.teamOnly) document.getElementById('team-toggle').classList.add('active');
+            }catch(e){}
+        }
+
+        // Master filter application
+        window.applyAllFilters = function(){
+            saveFilterState();
+            var activeRepos = {};
+            document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos[el.dataset.repo] = true; });
+            var ciFilter = document.getElementById('f-ci').value;
+            var hideDrafts = document.getElementById('f-drafts').checked;
+            var teamOnly = document.getElementById('team-toggle').classList.contains('active');
+
+            document.querySelectorAll('.pr-row[data-pr-key]').forEach(function(el){
+                var hide = false;
+                if(!activeRepos[el.dataset.repo]) hide = true;
+                if(ciFilter === 'passing' && el.dataset.ci && el.dataset.ci !== 'success') hide = true;
+                if(ciFilter === 'failing' && el.dataset.ci !== 'failure' && el.dataset.ci !== 'error') hide = true;
+                if(hideDrafts && el.dataset.draft === 'true') hide = true;
+                if(teamOnly && el.dataset.team !== 'true') hide = true;
+
+                if(hide) el.classList.add('filter-hidden');
+                else el.classList.remove('filter-hidden');
+            });
+
+            // Hide ticket cards if all non-actioned rows are hidden
+            document.querySelectorAll('.ticket-card').forEach(function(card){
+                if(card.classList.contains('action-hidden')) return;
+                var anyVisible = false;
+                card.querySelectorAll('.pr-row').forEach(function(row){
+                    if(!row.classList.contains('filter-hidden') &&
+                       !row.classList.contains('action-reviewed') &&
+                       !row.classList.contains('action-dismissed')){
+                        anyVisible = true;
+                    }
+                });
+                if(anyVisible) card.classList.remove('filter-hidden');
+                else card.classList.add('filter-hidden');
+            });
+
+            // Also filter your-pr-rows
+            document.querySelectorAll('.your-pr-row').forEach(function(el){
+                var hide = false;
+                if(!activeRepos[el.dataset.repo]) hide = true;
+                if(ciFilter === 'passing' && el.dataset.ci && el.dataset.ci !== 'success') hide = true;
+                if(ciFilter === 'failing' && el.dataset.ci !== 'failure' && el.dataset.ci !== 'error') hide = true;
+                if(hideDrafts && el.dataset.draft === 'true') hide = true;
+                if(hide) el.classList.add('filter-hidden');
+                else el.classList.remove('filter-hidden');
+            });
+        };
+
+        // Owner label toggle
+        window.toggleOwner = function(label){
+            var owner = label.dataset.owner;
+            var pills = document.querySelectorAll('.repo-pill[data-owner="' + owner + '"]');
+            var allActive = true;
+            pills.forEach(function(p){ if(!p.classList.contains('active')) allActive = false; });
+            pills.forEach(function(p){
+                if(allActive) p.classList.remove('active');
+                else p.classList.add('active');
+            });
+            saveFilterState();
+            applyAllFilters();
+        };
+
+        // Team toggle
+        window.toggleTeam = function(){
+            var btn = document.getElementById('team-toggle');
+            btn.classList.toggle('active');
+            saveFilterState();
+            applyAllFilters();
+        };
+
+        // Column sorting
+        var sortState = {};
+        var originalPillOrder = null;
+        var originalCardState = {};
+        function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+        window.sortColumn = function(th){
+            var section = th.closest('.section');
+            var sectionId = section.dataset.section;
+            var key = th.dataset.sortKey;
+            if(!key) return;
+
+            var state = sortState[sectionId] || {};
+            var cards = section.querySelector('.section-cards');
+            if(!cards) return;
+
+            // asc -> desc -> clear
+            var dir;
+            if(state.key === key){
+                if(state.dir === 'asc') dir = 'desc';
+                else dir = null;
+            } else {
+                dir = 'asc';
+            }
+
+            // Update sort arrows
+            section.querySelectorAll('.sortable').forEach(function(h){
+                h.classList.remove('sort-asc','sort-desc');
+            });
+
+            if(!dir){
+                sortState[sectionId] = {};
+                if(originalCardState[sectionId]){
+                    var st = originalCardState[sectionId];
+                    st.cards.forEach(function(c){ cards.appendChild(c); });
+                    st.cards.forEach(function(c){
+                        var tbody = c.querySelector('tbody');
+                        var rows = st.rows[c.dataset.ticket];
+                        if(tbody && rows) rows.forEach(function(r){ tbody.appendChild(r); });
+                    });
+                    delete originalCardState[sectionId];
+                }
+                if(originalPillOrder){
+                    var pc = document.getElementById('repo-pills');
+                    originalPillOrder.forEach(function(p){ pc.appendChild(p); });
+                    originalPillOrder = null;
+                }
+                applyAllFilters();
+                return;
+            }
+
+            sortState[sectionId] = {key: key, dir: dir};
+            th.classList.add('sort-' + dir);
+
+            if(!originalCardState[sectionId]){
+                var cardEls = Array.from(cards.querySelectorAll('.ticket-card'));
+                var rowMap = {};
+                cardEls.forEach(function(c){
+                    rowMap[c.dataset.ticket] = Array.from(c.querySelectorAll('.pr-row'));
+                });
+                originalCardState[sectionId] = {cards: cardEls, rows: rowMap};
+            }
+
+            var sortKey = 'sort' + capitalize(key);
+            var isNumeric = (key === 'number' || key === 'age' || key === 'loc');
+
+            function cmp(a, b){
+                var av = a.dataset[sortKey];
+                var bv = b.dataset[sortKey];
+                if(isNumeric){
+                    av = parseFloat(av) || 0;
+                    bv = parseFloat(bv) || 0;
+                    return dir === 'asc' ? av - bv : bv - av;
+                }
+                av = (av || '').toLowerCase();
+                bv = (bv || '').toLowerCase();
+                if(av < bv) return dir === 'asc' ? -1 : 1;
+                if(av > bv) return dir === 'asc' ? 1 : -1;
+                return 0;
+            }
+
+            var ticketCards = Array.from(cards.querySelectorAll('.ticket-card'));
+            ticketCards.forEach(function(card){
+                var tbody = card.querySelector('tbody');
+                var rows = Array.from(card.querySelectorAll('.pr-row'));
+                rows.sort(cmp);
+                rows.forEach(function(r){ tbody.appendChild(r); });
+            });
+
+            ticketCards.sort(function(a, b){
+                var ar = a.querySelector('.pr-row');
+                var br = b.querySelector('.pr-row');
+                if(!ar || !br) return 0;
+                return cmp(ar, br);
+            });
+
+            ticketCards.forEach(function(c){ cards.appendChild(c); });
+
+            if(!originalPillOrder){
+                var pc = document.getElementById('repo-pills');
+                originalPillOrder = Array.from(pc.children);
+            }
+            var proxyValues = {};
+            ticketCards.forEach(function(card){
+                var firstRow = card.querySelector('.pr-row');
+                if(firstRow){
+                    var repo = firstRow.dataset.repo;
+                    if(!(repo in proxyValues)){
+                        proxyValues[repo] = firstRow.dataset[sortKey];
+                    }
+                }
+            });
+            var pills = Array.from(document.querySelectorAll('.repo-pill'));
+            pills.sort(function(a,b){
+                var av = proxyValues[a.dataset.repo];
+                var bv = proxyValues[b.dataset.repo];
+                if(isNumeric){
+                    av = parseFloat(av) || 0;
+                    bv = parseFloat(bv) || 0;
+                    return dir === 'asc' ? av - bv : bv - av;
+                }
+                av = (av||'').toLowerCase();
+                bv = (bv||'').toLowerCase();
+                return dir === 'asc' ? (av < bv ? -1 : av > bv ? 1 : 0) : (av > bv ? -1 : av < bv ? 1 : 0);
+            });
+            var pc2 = document.getElementById('repo-pills');
+            pills.forEach(function(p){ pc2.appendChild(p); });
+
+            applyAllFilters();
+        };
+
+        // Initialize
+        if(!initViewer()) return; // redirecting
+        applyActions();
+        loadFilterState();
+        applyAllFilters();
+        initBgPoll();
     })();
     </script>
 </body>

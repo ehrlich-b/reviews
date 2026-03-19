@@ -38,19 +38,33 @@ func (s *Syncer) Run(verbose bool, orgs []string) (*Summary, error) {
 		return nil, fmt.Errorf("get viewer: %w", err)
 	}
 	log.Printf("syncing as %s", viewer)
-	if err := s.store.SetConfig("viewer", viewer); err != nil {
-		return nil, fmt.Errorf("store viewer: %w", err)
-	}
 
 	repos, err := s.gh.DiscoverRepos(orgs)
 	if err != nil {
 		return nil, fmt.Errorf("discover repos: %w", err)
 	}
+
+	// Prune repos no longer in discovery (e.g. switched org, repo deleted)
+	prev, err := s.store.ListSyncedRepos()
+	if err != nil {
+		return nil, fmt.Errorf("list synced repos: %w", err)
+	}
+	discovered := map[string]bool{}
+	for _, r := range repos {
+		discovered[r] = true
+	}
+	for _, r := range prev {
+		if !discovered[r] {
+			s.store.PrunePRs(r, nil)
+			s.store.DeleteSyncState(r)
+		}
+	}
+
 	if len(repos) == 0 {
-		log.Printf("no repos with open PRs found")
+		log.Printf("no repos to sync")
 		return &Summary{}, nil
 	}
-	log.Printf("found %d repos with open PRs", len(repos))
+	log.Printf("syncing %d repos", len(repos))
 
 	allPRs, err := s.gh.FetchRepoPRs(repos)
 	if err != nil {
@@ -64,7 +78,7 @@ func (s *Syncer) Run(verbose bool, orgs []string) (*Summary, error) {
 		var openNumbers []int
 		for _, pr := range prs {
 			openNumbers = append(openNumbers, pr.Number)
-			row := classify(pr, viewer, repo, now)
+			row := classify(pr, "", repo, now)
 			if err := s.store.UpsertPR(row); err != nil {
 				return nil, fmt.Errorf("upsert %s#%d: %w", repo, pr.Number, err)
 			}
@@ -92,6 +106,14 @@ func (s *Syncer) Run(verbose bool, orgs []string) (*Summary, error) {
 		}
 	}
 
+	// Clean up repos that were requested but not returned (deleted/inaccessible)
+	for _, r := range repos {
+		if _, ok := allPRs[r]; !ok {
+			s.store.PrunePRs(r, nil)
+			s.store.DeleteSyncState(r)
+		}
+	}
+
 	return sum, nil
 }
 
@@ -114,6 +136,8 @@ func classify(pr github.PullRequestNode, viewer, repo, syncedAt string) *db.Pull
 		URL:          pr.URL,
 		Draft:        pr.IsDraft,
 		CommentCount: len(pr.Comments.Nodes),
+		Additions:    pr.Additions,
+		Deletions:    pr.Deletions,
 		UpdatedAt:    pr.UpdatedAt,
 		SyncedAt:     syncedAt,
 	}

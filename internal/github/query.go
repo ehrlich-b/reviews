@@ -3,6 +3,7 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -15,6 +16,8 @@ fragment prFields on Repository {
 			url
 			isDraft
 			updatedAt
+			additions
+			deletions
 			author { login avatarUrl }
 			reviewDecision
 			commits(last: 1) {
@@ -70,6 +73,8 @@ type PullRequestNode struct {
 	URL            string  `json:"url"`
 	IsDraft        bool    `json:"isDraft"`
 	UpdatedAt      string  `json:"updatedAt"`
+	Additions      int     `json:"additions"`
+	Deletions      int     `json:"deletions"`
 	Author         *Actor  `json:"author"`
 	ReviewDecision *string `json:"reviewDecision"`
 	Commits        struct {
@@ -143,9 +148,14 @@ func (c *Client) fetchBatch(repos []string) (map[string][]PullRequestNode, error
 		if !ok {
 			continue
 		}
+		if string(data) == "null" {
+			log.Printf("repo %s not accessible, skipping", fullName)
+			continue
+		}
 		var repo repositoryResult
 		if err := json.Unmarshal(data, &repo); err != nil {
-			return nil, fmt.Errorf("decode repo %s: %w", fullName, err)
+			log.Printf("decode repo %s: %v, skipping", fullName, err)
+			continue
 		}
 		result[fullName] = repo.PullRequests.Nodes
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -79,6 +80,9 @@ func syncCmd(args []string) {
 }
 
 func parseOrgs() []string {
+	if orgs := loadConfig(); len(orgs) > 0 {
+		return orgs
+	}
 	var orgs []string
 	if v := os.Getenv("GITHUB_ORGS"); v != "" {
 		for _, o := range strings.Split(v, ",") {
@@ -88,6 +92,26 @@ func parseOrgs() []string {
 		}
 	}
 	return orgs
+}
+
+func loadConfig() []string {
+	home, _ := os.UserHomeDir()
+	f, err := os.Open(filepath.Join(home, ".reviews", "config.json"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var cfg struct {
+		Org string `json:"org"`
+	}
+	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+		log.Printf("parse config.json: %v", err)
+		return nil
+	}
+	if cfg.Org != "" {
+		return []string{cfg.Org}
+	}
+	return nil
 }
 
 func defaultDBPath() string {

@@ -25,6 +25,8 @@ type PullRequest struct {
 	LastCommitAt         *string
 	LastReviewActivityAt *string
 	Approvers            *string
+	Additions            int
+	Deletions            int
 	SyncedAt             string
 }
 
@@ -32,8 +34,8 @@ func (s *Store) UpsertPR(pr *PullRequest) error {
 	_, err := s.db.Exec(`INSERT INTO pull_requests
 		(repo, number, title, author, author_avatar, url, draft, comment_count, updated_at,
 		 ticket_key, ci_status, review_status, triage_bucket, triage_reason,
-		 last_commit_at, last_review_activity_at, approvers, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 last_commit_at, last_review_activity_at, approvers, additions, deletions, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo, number) DO UPDATE SET
 			title=excluded.title, author=excluded.author, author_avatar=excluded.author_avatar,
 			url=excluded.url, draft=excluded.draft, comment_count=excluded.comment_count,
@@ -41,11 +43,12 @@ func (s *Store) UpsertPR(pr *PullRequest) error {
 			ci_status=excluded.ci_status, review_status=excluded.review_status,
 			triage_bucket=excluded.triage_bucket, triage_reason=excluded.triage_reason,
 			last_commit_at=excluded.last_commit_at, last_review_activity_at=excluded.last_review_activity_at,
-			approvers=excluded.approvers, synced_at=excluded.synced_at`,
+			approvers=excluded.approvers, additions=excluded.additions, deletions=excluded.deletions,
+			synced_at=excluded.synced_at`,
 		pr.Repo, pr.Number, pr.Title, pr.Author, pr.AuthorAvatar, pr.URL,
 		pr.Draft, pr.CommentCount, pr.UpdatedAt,
 		pr.TicketKey, pr.CIStatus, pr.ReviewStatus, pr.TriageBucket, pr.TriageReason,
-		pr.LastCommitAt, pr.LastReviewActivityAt, pr.Approvers, pr.SyncedAt)
+		pr.LastCommitAt, pr.LastReviewActivityAt, pr.Approvers, pr.Additions, pr.Deletions, pr.SyncedAt)
 	if err != nil {
 		return fmt.Errorf("upsert PR: %w", err)
 	}
@@ -72,6 +75,31 @@ func (s *Store) PrunePRs(repo string, openNumbers []int) error {
 	_, err := s.db.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("prune PRs for %s: %w", repo, err)
+	}
+	return nil
+}
+
+func (s *Store) ListSyncedRepos() ([]string, error) {
+	rows, err := s.db.Query("SELECT repo FROM sync_state")
+	if err != nil {
+		return nil, fmt.Errorf("list synced repos: %w", err)
+	}
+	defer rows.Close()
+	var repos []string
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			return nil, fmt.Errorf("scan synced repo: %w", err)
+		}
+		repos = append(repos, r)
+	}
+	return repos, rows.Err()
+}
+
+func (s *Store) DeleteSyncState(repo string) error {
+	_, err := s.db.Exec("DELETE FROM sync_state WHERE repo = ?", repo)
+	if err != nil {
+		return fmt.Errorf("delete sync state %s: %w", repo, err)
 	}
 	return nil
 }
@@ -107,7 +135,7 @@ func (s *Store) GetConfig(key string) (string, error) {
 func (s *Store) ListPRs() ([]*PullRequest, error) {
 	rows, err := s.db.Query(`SELECT id, repo, number, title, author, author_avatar, url, draft,
 		comment_count, updated_at, ticket_key, ci_status, review_status, triage_bucket,
-		triage_reason, last_commit_at, last_review_activity_at, approvers, synced_at
+		triage_reason, last_commit_at, last_review_activity_at, approvers, additions, deletions, synced_at
 		FROM pull_requests ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list PRs: %w", err)
@@ -121,13 +149,48 @@ func (s *Store) ListPRs() ([]*PullRequest, error) {
 			&pr.AuthorAvatar, &pr.URL, &pr.Draft, &pr.CommentCount, &pr.UpdatedAt,
 			&pr.TicketKey, &pr.CIStatus, &pr.ReviewStatus, &pr.TriageBucket,
 			&pr.TriageReason, &pr.LastCommitAt, &pr.LastReviewActivityAt,
-			&pr.Approvers, &pr.SyncedAt)
+			&pr.Approvers, &pr.Additions, &pr.Deletions, &pr.SyncedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan PR: %w", err)
 		}
 		prs = append(prs, pr)
 	}
 	return prs, nil
+}
+
+func (s *Store) AddTeamMember(username string) error {
+	_, err := s.db.Exec(`INSERT INTO team_members (username) VALUES (?)
+		ON CONFLICT(username) DO NOTHING`, username)
+	if err != nil {
+		return fmt.Errorf("add team member: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RemoveTeamMember(username string) error {
+	_, err := s.db.Exec("DELETE FROM team_members WHERE username = ?", username)
+	if err != nil {
+		return fmt.Errorf("remove team member: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListTeamMembers() ([]string, error) {
+	rows, err := s.db.Query("SELECT username FROM team_members ORDER BY username")
+	if err != nil {
+		return nil, fmt.Errorf("list team members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, fmt.Errorf("scan team member: %w", err)
+		}
+		members = append(members, u)
+	}
+	return members, nil
 }
 
 func (s *Store) GetSyncInfo() (repoCount int, prCount int, lastSync string, err error) {

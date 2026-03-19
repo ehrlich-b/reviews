@@ -1,87 +1,281 @@
 {{define "content"}}
 <main>
-    <section class="section">
+    <section class="section" data-section="needs-review">
         <h2 class="section-header">Needs Your Review <span class="count">({{.NeedsReviewCount}})</span></h2>
         {{if .NeedsReview}}
+        <table class="pr-table section-header-table">
+            <colgroup>
+                <col style="width:6%">
+                <col style="width:4.5%">
+                <col>
+                <col style="width:11%">
+                <col style="width:2%">
+                <col style="width:6.5%">
+                <col style="width:5.5%">
+                <col style="width:13%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort-key="repo" onclick="sortColumn(this)">Repo</th>
+                    <th class="sortable" data-sort-key="number" onclick="sortColumn(this)">#</th>
+                    <th>Title</th>
+                    <th class="sortable" data-sort-key="author" onclick="sortColumn(this)">Author</th>
+                    <th class="sortable" data-sort-key="ci" onclick="sortColumn(this)">CI</th>
+                    <th class="sortable" data-sort-key="loc" onclick="sortColumn(this)">+/-</th>
+                    <th class="sortable" data-sort-key="age" onclick="sortColumn(this)">Age</th>
+                    <th></th>
+                </tr>
+            </thead>
+        </table>
+        <div class="section-cards">
         {{range .NeedsReview}}
-        <div class="ticket-group">
-            <div class="ticket-header">
-                <span class="ticket-key">{{.TicketKey}}</span>
-                <span class="ticket-meta">{{pluralize (len .PRs) "PR"}} across {{join .Repos ", "}}</span>
-                <span class="ticket-activity">{{reltime .LastActivity}}</span>
+            <div class="ticket-card" data-ticket="{{.TicketKey}}">
+                <div class="ticket-header"><span class="ticket-key">{{.TicketKey}}</span><span class="ticket-meta">{{join .Repos ", "}} &middot; {{join .Authors ", "}}</span></div>
+                <table class="pr-table">
+                    <colgroup>
+                        <col style="width:6%">
+                        <col style="width:4.5%">
+                        <col>
+                        <col style="width:11%">
+                        <col style="width:2%">
+                        <col style="width:6.5%">
+                        <col style="width:5.5%">
+                        <col style="width:13%">
+                    </colgroup>
+                    <tbody>
+                    {{range .PRs}}
+                    <tr class="pr-row"
+                        data-pr-key="{{.Repo}}#{{.Number}}"
+                        data-commit="{{deref .LastCommitAt}}"
+                        data-ci="{{deref .CIStatus}}"
+                        data-repo="{{shortRepo .Repo}}"
+                        data-draft="{{.Draft}}"
+                        data-ticket="{{deref .TicketKey}}"
+                        {{if index $.TeamAuthors .Author}}data-team="true"{{end}}
+                        data-sort-repo="{{shortRepo .Repo}}"
+                        data-sort-number="{{.Number}}"
+                        data-sort-age="{{epoch .UpdatedAt}}"
+                        data-sort-loc="{{add .Additions .Deletions}}"
+                        data-sort-author="{{.Author}}"
+                        data-sort-ci="{{deref .CIStatus}}">
+                        <td class="cell-repo">{{shortRepo .Repo}}</td>
+                        <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+                        <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+                        <td class="cell-author">{{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}{{.Author}}</td>
+                        <td class="cell-ci">{{if .CIStatus}}<span class="ci-dot {{ciClass .CIStatus}}" title="{{ciLabel .CIStatus}}"></span>{{end}}</td>
+                        <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+                        <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                        <td class="cell-actions">
+                            <button class="btn-reviewed" onclick="markReviewed(this)">Reviewed</button>
+                            <button class="btn-dismiss" onclick="dismissPR(this)">Dismiss</button>
+                            <button class="btn-undo" onclick="undoAction(this)" style="display:none">Undo</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                    </tbody>
+                </table>
             </div>
-            {{range .PRs}}
-            <a href="{{.URL}}" class="pr-row" target="_blank" rel="noopener"
-               data-ci="{{deref .CIStatus}}" data-bucket="{{.TriageBucket}}" data-draft="{{.Draft}}" data-repo="{{.Repo}}">
-                <span class="pr-repo">{{shortRepo .Repo}}</span>
-                <div class="pr-title-line">
-                    <span class="pr-number">#{{.Number}}</span>
-                    <span class="pr-title">{{.Title}}</span>
-                </div>
-                <span class="pr-right">{{reltime .UpdatedAt}}</span>
-                <div class="pr-meta">
-                    <span>{{deref .TriageReason}}</span>
-                    {{if ciLabel .CIStatus}}<span class="{{ciClass .CIStatus}}">{{ciLabel .CIStatus}}</span>{{end}}
-                    <span class="pr-author">
-                        {{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}
-                        @{{.Author}}
-                    </span>
-                    <span>{{pluralize .CommentCount "comment"}}</span>
-                </div>
-            </a>
-            {{end}}
-        </div>
         {{end}}
+        </div>
         {{else}}
-        <div class="empty-state">Nothing to review right now. Run <code>reviews sync</code> to fetch PRs.</div>
+        <div class="empty-state">Nothing to review right now.</div>
         {{end}}
     </section>
+
+    {{if gt .AuthorsCourtCount 0}}
+    <section class="section" data-section="authors-court">
+        <h2 class="section-header">Author's Court <span class="count">({{.AuthorsCourtCount}})</span></h2>
+        <table class="pr-table section-header-table">
+            <colgroup>
+                <col style="width:6%">
+                <col style="width:4.5%">
+                <col>
+                <col style="width:11%">
+                <col style="width:2%">
+                <col style="width:6.5%">
+                <col style="width:5.5%">
+                <col style="width:13%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort-key="repo" onclick="sortColumn(this)">Repo</th>
+                    <th class="sortable" data-sort-key="number" onclick="sortColumn(this)">#</th>
+                    <th>Title</th>
+                    <th class="sortable" data-sort-key="author" onclick="sortColumn(this)">Author</th>
+                    <th class="sortable" data-sort-key="ci" onclick="sortColumn(this)">CI</th>
+                    <th class="sortable" data-sort-key="loc" onclick="sortColumn(this)">+/-</th>
+                    <th class="sortable" data-sort-key="age" onclick="sortColumn(this)">Age</th>
+                    <th></th>
+                </tr>
+            </thead>
+        </table>
+        <div class="section-cards">
+        {{range .AuthorsCourt}}
+            <div class="ticket-card" data-ticket="{{.TicketKey}}">
+                <div class="ticket-header"><span class="ticket-key">{{.TicketKey}}</span><span class="ticket-meta">{{join .Repos ", "}} &middot; {{join .Authors ", "}}</span></div>
+                <table class="pr-table">
+                    <colgroup>
+                        <col style="width:6%">
+                        <col style="width:4.5%">
+                        <col>
+                        <col style="width:11%">
+                        <col style="width:2%">
+                        <col style="width:6.5%">
+                        <col style="width:5.5%">
+                        <col style="width:13%">
+                    </colgroup>
+                    <tbody>
+                    {{range .PRs}}
+                    <tr class="pr-row"
+                        data-pr-key="{{.Repo}}#{{.Number}}"
+                        data-commit="{{deref .LastCommitAt}}"
+                        data-ci="{{deref .CIStatus}}"
+                        data-repo="{{shortRepo .Repo}}"
+                        data-draft="{{.Draft}}"
+                        data-ticket="{{deref .TicketKey}}"
+                        {{if index $.TeamAuthors .Author}}data-team="true"{{end}}
+                        data-sort-repo="{{shortRepo .Repo}}"
+                        data-sort-number="{{.Number}}"
+                        data-sort-age="{{epoch .UpdatedAt}}"
+                        data-sort-loc="{{add .Additions .Deletions}}"
+                        data-sort-author="{{.Author}}"
+                        data-sort-ci="{{deref .CIStatus}}">
+                        <td class="cell-repo">{{shortRepo .Repo}}</td>
+                        <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+                        <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+                        <td class="cell-author">{{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}{{.Author}}</td>
+                        <td class="cell-ci">{{if .CIStatus}}<span class="ci-dot {{ciClass .CIStatus}}" title="{{ciLabel .CIStatus}}"></span>{{end}}</td>
+                        <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+                        <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                        <td class="cell-actions">
+                            <button class="btn-reviewed" onclick="markReviewed(this)">Reviewed</button>
+                            <button class="btn-dismiss" onclick="dismissPR(this)">Dismiss</button>
+                            <button class="btn-undo" onclick="undoAction(this)" style="display:none">Undo</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+            </div>
+        {{end}}
+        </div>
+    </section>
+    {{end}}
 
     {{if gt .YourPRsCount 0}}
     <section class="section">
         <h2 class="section-header">Your PRs <span class="count">({{.YourPRsCount}})</span></h2>
-        <div class="ticket-group">
-            {{if .YourApproved}}
-            <div class="subsection-label">Approved &mdash; merge these</div>
+        <table class="pr-table">
+            <colgroup>
+                <col style="width:7%">
+                <col style="width:7%">
+                <col style="width:5%">
+                <col>
+                <col style="width:7%">
+                <col style="width:5%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Repo</th>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>+/-</th>
+                    <th>Age</th>
+                </tr>
+            </thead>
+            <tbody>
             {{range .YourApproved}}
-            <a href="{{.URL}}" class="your-pr-row" target="_blank" rel="noopener"
-               data-ci="{{deref .CIStatus}}" data-bucket="approved" data-draft="{{.Draft}}">
-                <span class="badge badge-approved">approved</span>
-                <span class="your-pr-repo">{{shortRepo .Repo}}</span>
-                <span class="your-pr-number">#{{.Number}}</span>
-                <span class="your-pr-title">{{.Title}}</span>
-                <span class="your-pr-time">{{reltime .UpdatedAt}}</span>
-            </a>
+            <tr class="your-pr-row" data-ci="{{deref .CIStatus}}" data-bucket="approved" data-draft="{{.Draft}}" data-repo="{{shortRepo .Repo}}">
+                <td><span class="badge badge-approved">approved</span></td>
+                <td class="cell-repo">{{shortRepo .Repo}}</td>
+                <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+                <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+                <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+            </tr>
             {{end}}
-            {{end}}
-            {{if .YourChanges}}
-            <div class="subsection-label">Changes requested</div>
             {{range .YourChanges}}
-            <a href="{{.URL}}" class="your-pr-row" target="_blank" rel="noopener"
-               data-ci="{{deref .CIStatus}}" data-bucket="changes" data-draft="{{.Draft}}">
-                <span class="badge badge-changes">changes</span>
-                <span class="your-pr-repo">{{shortRepo .Repo}}</span>
-                <span class="your-pr-number">#{{.Number}}</span>
-                <span class="your-pr-title">{{.Title}}</span>
-                <span class="your-pr-time">{{reltime .UpdatedAt}}</span>
-            </a>
+            <tr class="your-pr-row" data-ci="{{deref .CIStatus}}" data-bucket="changes" data-draft="{{.Draft}}" data-repo="{{shortRepo .Repo}}">
+                <td><span class="badge badge-changes">changes</span></td>
+                <td class="cell-repo">{{shortRepo .Repo}}</td>
+                <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+                <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+                <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+            </tr>
             {{end}}
-            {{end}}
-            {{if .YourWaiting}}
-            <div class="subsection-label">Waiting on review</div>
             {{range .YourWaiting}}
-            <a href="{{.URL}}" class="your-pr-row" target="_blank" rel="noopener"
-               data-ci="{{deref .CIStatus}}" data-bucket="waiting" data-draft="{{.Draft}}">
-                <span class="badge badge-waiting">waiting</span>
-                <span class="your-pr-repo">{{shortRepo .Repo}}</span>
-                <span class="your-pr-number">#{{.Number}}</span>
-                <span class="your-pr-title">{{.Title}}</span>
-                <span class="your-pr-time">{{reltime .UpdatedAt}}</span>
-            </a>
+            <tr class="your-pr-row" data-ci="{{deref .CIStatus}}" data-bucket="waiting" data-draft="{{.Draft}}" data-repo="{{shortRepo .Repo}}">
+                <td><span class="badge badge-waiting">waiting</span></td>
+                <td class="cell-repo">{{shortRepo .Repo}}</td>
+                <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+                <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+                <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+            </tr>
             {{end}}
-            {{end}}
-        </div>
+            </tbody>
+        </table>
     </section>
     {{end}}
+
+    <section class="section" id="reviewed-section" style="display:none">
+        <h2 class="section-header">Reviewed <span class="count" id="reviewed-count"></span></h2>
+        <table class="pr-table">
+            <colgroup>
+                <col style="width:6%">
+                <col style="width:4.5%">
+                <col>
+                <col style="width:11%">
+                <col style="width:2%">
+                <col style="width:6.5%">
+                <col style="width:5.5%">
+                <col style="width:13%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Repo</th>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Author</th>
+                    <th>CI</th>
+                    <th>+/-</th>
+                    <th>Age</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="reviewed-body"></tbody>
+        </table>
+    </section>
+
+    <section class="section" id="dismissed-section" style="display:none">
+        <h2 class="section-header">Dismissed <span class="count" id="dismissed-count"></span></h2>
+        <table class="pr-table">
+            <colgroup>
+                <col style="width:6%">
+                <col style="width:4.5%">
+                <col>
+                <col style="width:11%">
+                <col style="width:2%">
+                <col style="width:6.5%">
+                <col style="width:5.5%">
+                <col style="width:13%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Repo</th>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Author</th>
+                    <th>CI</th>
+                    <th>+/-</th>
+                    <th>Age</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="dismissed-body"></tbody>
+        </table>
+    </section>
 </main>
 {{end}}
