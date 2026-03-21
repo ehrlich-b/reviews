@@ -7,12 +7,14 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	gosync "sync"
 	"time"
 
 	"github.com/ehrlich-b/reviews/internal/db"
+	"github.com/ehrlich-b/reviews/internal/slack"
 	reviewsync "github.com/ehrlich-b/reviews/internal/sync"
 )
 
@@ -26,13 +28,27 @@ type Server struct {
 	syncer *reviewsync.Syncer
 	orgs   []string
 
+	adminToken  string
+	slackClient *slack.Client
+	nagEnabled  bool
+	nagDryRun   bool
+	jiraBaseURL string
+
 	syncMu           gosync.Mutex
 	lastSyncComplete time.Time
 	syncPending      bool
 	syncRunning      bool
 }
 
-func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string) *Server {
+type Config struct {
+	AdminToken  string
+	SlackClient *slack.Client
+	NagEnabled  bool
+	NagDryRun   bool
+	JiraBaseURL string
+}
+
+func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string, cfg Config) *Server {
 	funcMap := template.FuncMap{
 		"reltime":    reltime,
 		"shortRepo":  shortRepo,
@@ -44,6 +60,9 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string) *Server {
 		"loc":        loc,
 		"add":        func(a, b int) int { return a + b },
 		"approvedBy": approvedBy,
+		"jiraURL": func(baseURL, key string) string {
+			return baseURL + "/browse/" + key
+		},
 		"epoch": func(iso string) int64 {
 			t, err := time.Parse(time.RFC3339, iso)
 			if err != nil {
@@ -56,11 +75,16 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string) *Server {
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templatesFS, "templates/*.html"))
 
 	s := &Server{
-		store:  store,
-		mux:    http.NewServeMux(),
-		tmpl:   tmpl,
-		syncer: syncer,
-		orgs:   orgs,
+		store:       store,
+		mux:         http.NewServeMux(),
+		tmpl:        tmpl,
+		syncer:      syncer,
+		orgs:        orgs,
+		adminToken:  cfg.AdminToken,
+		slackClient: cfg.SlackClient,
+		nagEnabled:  cfg.NagEnabled,
+		nagDryRun:   cfg.NagDryRun,
+		jiraBaseURL: cfg.JiraBaseURL,
 	}
 	s.routes()
 
@@ -71,6 +95,10 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string) *Server {
 			s.runSync()
 			go s.backgroundSync()
 		}()
+	}
+
+	if s.nagEnabled {
+		go s.nagLoop()
 	}
 
 	return s
@@ -147,8 +175,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	s.mux.HandleFunc("POST /api/sync", s.handleSync)
 	s.mux.HandleFunc("GET /api/sync/status", s.handleSyncStatus)
-	s.mux.HandleFunc("POST /api/team", s.handleAddTeam)
-	s.mux.HandleFunc("DELETE /api/team", s.handleRemoveTeam)
+
+	// Admin routes
+	s.mux.HandleFunc("GET /admin", s.handleAdmin)
+	s.mux.HandleFunc("POST /api/admin/team", s.adminAuth(s.handleAdminCreateTeam))
+	s.mux.HandleFunc("DELETE /api/admin/team", s.adminAuth(s.handleAdminDeleteTeam))
+	s.mux.HandleFunc("POST /api/admin/team/member", s.adminAuth(s.handleAdminAddMember))
+	s.mux.HandleFunc("DELETE /api/admin/team/member", s.adminAuth(s.handleAdminRemoveMember))
+	s.mux.HandleFunc("POST /api/admin/slack", s.adminAuth(s.handleAdminSetSlack))
+	s.mux.HandleFunc("DELETE /api/admin/slack", s.adminAuth(s.handleAdminRemoveSlack))
+	s.mux.HandleFunc("POST /api/admin/slack/resolve", s.adminAuth(s.handleAdminSlackResolve))
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
@@ -179,19 +215,109 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleAddTeam(w http.ResponseWriter, r *http.Request) {
+// Admin auth middleware
+func (s *Server) adminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.adminToken == "" {
+			http.Error(w, "admin not configured", 503)
+			return
+		}
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			auth := r.Header.Get("Authorization")
+			if strings.HasPrefix(auth, "Bearer ") {
+				token = auth[7:]
+			}
+		}
+		if token != s.adminToken {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	if s.adminToken == "" {
+		http.Error(w, "admin not configured (set ADMIN_TOKEN)", 503)
+		return
+	}
+
+	token := r.URL.Query().Get("token")
+	if token != s.adminToken {
+		// Show login page
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := s.tmpl.ExecuteTemplate(w, "admin", nil); err != nil {
+			log.Printf("render admin: %v", err)
+		}
+		return
+	}
+
+	teams, _ := s.store.ListTeams()
+	memberships, _ := s.store.ListTeamMemberships()
+	slackMappings, _ := s.store.ListSlackMappings()
+
+	type adminData struct {
+		Token          string
+		Teams          []string
+		Memberships    map[string][]string
+		SlackMappings  []db.SlackMapping
+		HasSlackClient bool
+	}
+	data := adminData{
+		Token:          s.adminToken,
+		Teams:          teams,
+		Memberships:    memberships,
+		SlackMappings:  slackMappings,
+		HasSlackClient: s.slackClient != nil,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "admin", data); err != nil {
+		log.Printf("render admin: %v", err)
+	}
+}
+
+func (s *Server) handleAdminCreateTeam(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if err := s.store.CreateTeam(body.Name); err != nil {
+		log.Printf("create team: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (s *Server) handleAdminDeleteTeam(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if err := s.store.DeleteTeam(name); err != nil {
+		log.Printf("delete team: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (s *Server) handleAdminAddMember(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Team     string `json:"team"`
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Team == "" || body.Username == "" {
 		http.Error(w, "bad request", 400)
 		return
 	}
-	if body.Username == "" {
-		http.Error(w, "bad request", 400)
-		return
-	}
-	if err := s.store.AddTeamMember(body.Username); err != nil {
+	if err := s.store.AddTeamMembership(body.Team, body.Username); err != nil {
 		log.Printf("add team member: %v", err)
 		http.Error(w, "internal error", 500)
 		return
@@ -199,18 +325,233 @@ func (s *Server) handleAddTeam(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func (s *Server) handleRemoveTeam(w http.ResponseWriter, r *http.Request) {
-	username := r.URL.Query().Get("user")
-	if username == "" {
+func (s *Server) handleAdminRemoveMember(w http.ResponseWriter, r *http.Request) {
+	team := r.URL.Query().Get("team")
+	user := r.URL.Query().Get("user")
+	if team == "" || user == "" {
 		http.Error(w, "bad request", 400)
 		return
 	}
-	if err := s.store.RemoveTeamMember(username); err != nil {
+	if err := s.store.RemoveTeamMembership(team, user); err != nil {
 		log.Printf("remove team member: %v", err)
 		http.Error(w, "internal error", 500)
 		return
 	}
 	w.WriteHeader(204)
+}
+
+func (s *Server) handleAdminSetSlack(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		GithubUsername string `json:"github_username"`
+		SlackUserID   string `json:"slack_user_id"`
+		Timezone      string `json:"timezone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.GithubUsername == "" || body.SlackUserID == "" {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if body.Timezone == "" {
+		body.Timezone = "America/New_York"
+	}
+	if err := s.store.SetSlackMapping(body.GithubUsername, body.SlackUserID, body.Timezone); err != nil {
+		log.Printf("set slack mapping: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (s *Server) handleAdminRemoveSlack(w http.ResponseWriter, r *http.Request) {
+	user := r.URL.Query().Get("user")
+	if user == "" {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if err := s.store.RemoveSlackMapping(user); err != nil {
+		log.Printf("remove slack mapping: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (s *Server) handleAdminSlackResolve(w http.ResponseWriter, r *http.Request) {
+	if s.slackClient == nil {
+		http.Error(w, "no Slack client configured", 503)
+		return
+	}
+	slackUsers, err := s.slackClient.ListUsers()
+	if err != nil {
+		log.Printf("slack resolve: %v", err)
+		http.Error(w, "slack API error", 502)
+		return
+	}
+
+	memberships, err := s.store.ListTeamMemberships()
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+
+	// Collect all unique team member usernames
+	memberSet := map[string]bool{}
+	for _, users := range memberships {
+		for _, u := range users {
+			memberSet[u] = true
+		}
+	}
+
+	type match struct {
+		GithubUsername string `json:"github_username"`
+		SlackUserID   string `json:"slack_user_id"`
+		SlackName     string `json:"slack_name"`
+	}
+
+	// Build lowercase name -> slack user map
+	slackByName := map[string]slack.SlackUser{}
+	for _, su := range slackUsers {
+		if su.DisplayName != "" {
+			slackByName[strings.ToLower(su.DisplayName)] = su
+		}
+		if su.RealName != "" {
+			slackByName[strings.ToLower(su.RealName)] = su
+		}
+	}
+
+	var matched []match
+	var unresolved []string
+	for ghUser := range memberSet {
+		if su, ok := slackByName[strings.ToLower(ghUser)]; ok {
+			matched = append(matched, match{
+				GithubUsername: ghUser,
+				SlackUserID:   su.ID,
+				SlackName:     su.DisplayName,
+			})
+		} else {
+			unresolved = append(unresolved, ghUser)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"matched":    matched,
+		"unresolved": unresolved,
+	})
+}
+
+// Nag system
+
+func (s *Server) nagLoop() {
+	log.Printf("nag goroutine started (dry_run=%v, slack_configured=%v)", s.nagDryRun, s.slackClient != nil)
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	// Run once immediately
+	s.runNag()
+	for range ticker.C {
+		s.runNag()
+	}
+}
+
+func (s *Server) runNag() {
+	dryRun := s.nagDryRun || s.slackClient == nil
+
+	prs, err := s.store.ListPRs()
+	if err != nil {
+		log.Printf("nag: list PRs: %v", err)
+		return
+	}
+
+	mappings, err := s.store.ListSlackMappings()
+	if err != nil {
+		log.Printf("nag: list slack mappings: %v", err)
+		return
+	}
+	if len(mappings) == 0 {
+		return
+	}
+
+	mappingByUser := map[string]db.SlackMapping{}
+	for _, m := range mappings {
+		mappingByUser[m.GithubUsername] = m
+	}
+
+	// Group author_court PRs by author
+	authorPRs := map[string][]*db.PullRequest{}
+	for _, pr := range prs {
+		if pr.TriageBucket == "author_court" {
+			authorPRs[pr.Author] = append(authorPRs[pr.Author], pr)
+		}
+	}
+
+	nagCount := 0
+	for author, prList := range authorPRs {
+		mapping, ok := mappingByUser[author]
+		if !ok {
+			continue
+		}
+
+		// Check if it's ~1pm in their timezone
+		loc, err := time.LoadLocation(mapping.Timezone)
+		if err != nil {
+			log.Printf("nag: bad timezone %q for %s: %v", mapping.Timezone, author, err)
+			continue
+		}
+		now := time.Now().In(loc)
+		if now.Hour() != 13 || now.Minute() > 5 {
+			continue
+		}
+
+		// Filter PRs not yet nagged today
+		today := now.Format("2006-01-02")
+		var toNag []*db.PullRequest
+		for _, pr := range prList {
+			prKey := fmt.Sprintf("%s#%d", pr.Repo, pr.Number)
+			lastNag, _ := s.store.GetLastNag(prKey)
+			if lastNag != "" {
+				// Parse nagged_at in user's timezone to see if same calendar date
+				nagTime, err := time.Parse(time.RFC3339, lastNag)
+				if err == nil && nagTime.In(loc).Format("2006-01-02") == today {
+					continue
+				}
+			}
+			toNag = append(toNag, pr)
+		}
+
+		if len(toNag) == 0 {
+			continue
+		}
+
+		// Build message
+		var lines []string
+		lines = append(lines, fmt.Sprintf("You have %d PRs waiting on you:", len(toNag)))
+		for _, pr := range toNag {
+			lines = append(lines, fmt.Sprintf("  - %s#%d: %s (%s)", shortRepo(pr.Repo), pr.Number, pr.Title, pr.URL))
+		}
+		msg := strings.Join(lines, "\n")
+
+		if dryRun {
+			log.Printf("nag [dry-run] would DM %s (%s): %s", author, mapping.Timezone, msg)
+		} else {
+			if err := s.slackClient.SendDM(mapping.SlackUserID, msg); err != nil {
+				log.Printf("nag: send DM to %s: %v", author, err)
+				continue
+			}
+			log.Printf("nag: sent DM to %s (%d PRs)", author, len(toNag))
+		}
+
+		// Record nag
+		naggedAt := time.Now().UTC().Format(time.RFC3339)
+		for _, pr := range toNag {
+			prKey := fmt.Sprintf("%s#%d", pr.Repo, pr.Number)
+			s.store.SetLastNag(prKey, naggedAt)
+		}
+		nagCount++
+	}
+
+	if nagCount > 0 || os.Getenv("NAG_VERBOSE") == "true" {
+		log.Printf("nag: processed %d authors", nagCount)
+	}
 }
 
 type ticketGroup struct {
@@ -222,11 +563,20 @@ type ticketGroup struct {
 	Deletions       int
 	LastActivity    string
 	OldestUpdatedAt string
+	JiraSummary     string
+	JiraStatus      string
+	EpicKey         string
+	EpicSummary     string
 }
 
 type repoGroup struct {
 	Owner string
 	Repos []string
+}
+
+type teamInfo struct {
+	Name    string
+	Members []string
 }
 
 type dashboardData struct {
@@ -244,8 +594,9 @@ type dashboardData struct {
 	TotalPRs          int
 	TotalRepos        int
 	LastSync          string
-	TeamMembers       []string
-	TeamAuthors       map[string]bool
+	Teams             []teamInfo
+	AuthorTeams       map[string][]string
+	JiraBaseURL       string
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -258,12 +609,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teamMembers, err := s.store.ListTeamMembers()
-	if err != nil {
-		log.Printf("list team members: %v", err)
-		http.Error(w, "internal error", 500)
-		return
-	}
+	teams, _ := s.store.ListTeams()
+	memberships, _ := s.store.ListTeamMemberships()
 
 	repoCount, prCount, lastSync, err := s.store.GetSyncInfo()
 	if err != nil {
@@ -272,7 +619,21 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := buildDashboard(viewer, prs, repoCount, prCount, lastSync, teamMembers)
+	// Load Jira data for displayed ticket keys
+	var jiraIssues map[string]*db.JiraIssue
+	if s.jiraBaseURL != "" {
+		var keys []string
+		seen := map[string]bool{}
+		for _, pr := range prs {
+			if pr.TicketKey != nil && !seen[*pr.TicketKey] {
+				keys = append(keys, *pr.TicketKey)
+				seen[*pr.TicketKey] = true
+			}
+		}
+		jiraIssues, _ = s.store.GetJiraIssues(keys)
+	}
+
+	data := buildDashboard(viewer, prs, repoCount, prCount, lastSync, teams, memberships, s.jiraBaseURL, jiraIssues)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "base", data); err != nil {
@@ -280,15 +641,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func buildDashboard(viewer string, prs []*db.PullRequest, repoCount, prCount int, lastSync string, teamMembers []string) *dashboardData {
-	teamSet := map[string]bool{}
-	for _, m := range teamMembers {
-		teamSet[m] = true
-	}
-	teamAuthors := map[string]bool{}
-	for _, pr := range prs {
-		if teamSet[pr.Author] {
-			teamAuthors[pr.Author] = true
+func buildDashboard(viewer string, prs []*db.PullRequest, repoCount, prCount int, lastSync string, teams []string, memberships map[string][]string, jiraBaseURL string, jiraIssues map[string]*db.JiraIssue) *dashboardData {
+	// Build team info and author->teams map
+	var teamInfos []teamInfo
+	authorTeams := map[string][]string{}
+	for _, t := range teams {
+		members := memberships[t]
+		teamInfos = append(teamInfos, teamInfo{Name: t, Members: members})
+		for _, m := range members {
+			authorTeams[m] = append(authorTeams[m], t)
 		}
 	}
 
@@ -297,8 +658,9 @@ func buildDashboard(viewer string, prs []*db.PullRequest, repoCount, prCount int
 		TotalPRs:    prCount,
 		TotalRepos:  repoCount,
 		LastSync:    lastSync,
-		TeamMembers: teamMembers,
-		TeamAuthors: teamAuthors,
+		Teams:       teamInfos,
+		AuthorTeams: authorTeams,
+		JiraBaseURL: jiraBaseURL,
 	}
 
 	var needsReview []*db.PullRequest
@@ -325,6 +687,26 @@ func buildDashboard(viewer string, prs []*db.PullRequest, repoCount, prCount int
 
 	data.NeedsReview = groupByTicket(needsReview)
 	data.AuthorsCourt = groupByTicket(authorsCourt)
+
+	// Enrich ticket groups with Jira data
+	if jiraIssues != nil {
+		enrichJira := func(groups []ticketGroup) {
+			for i := range groups {
+				if ji, ok := jiraIssues[groups[i].TicketKey]; ok {
+					groups[i].JiraSummary = ji.Summary
+					groups[i].JiraStatus = ji.Status
+					if ji.EpicKey != nil {
+						groups[i].EpicKey = *ji.EpicKey
+					}
+					if ji.EpicSummary != nil {
+						groups[i].EpicSummary = *ji.EpicSummary
+					}
+				}
+			}
+		}
+		enrichJira(data.NeedsReview)
+		enrichJira(data.AuthorsCourt)
+	}
 
 	data.NeedsReviewCount = 0
 	for _, g := range data.NeedsReview {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/ehrlich-b/reviews/internal/db"
 	"github.com/ehrlich-b/reviews/internal/github"
+	"github.com/ehrlich-b/reviews/internal/jira"
 )
 
 var ticketRe = regexp.MustCompile(`[A-Z]+-\d+`)
@@ -17,10 +18,15 @@ var ticketRe = regexp.MustCompile(`[A-Z]+-\d+`)
 type Syncer struct {
 	gh    *github.Client
 	store *db.Store
+	jira  *jira.Client
 }
 
 func New(gh *github.Client, store *db.Store) *Syncer {
 	return &Syncer{gh: gh, store: store}
+}
+
+func (s *Syncer) SetJiraClient(c *jira.Client) {
+	s.jira = c
 }
 
 type Summary struct {
@@ -114,7 +120,54 @@ func (s *Syncer) Run(verbose bool, orgs []string) (*Summary, error) {
 		}
 	}
 
+	// Prune nag log for PRs no longer in DB
+	if err := s.store.PruneNagLog(); err != nil {
+		log.Printf("prune nag log: %v", err)
+	}
+
+	// Jira enrichment (best-effort)
+	if s.jira != nil {
+		s.syncJira(now)
+	}
+
 	return sum, nil
+}
+
+func (s *Syncer) syncJira(syncedAt string) {
+	prs, err := s.store.ListPRs()
+	if err != nil {
+		log.Printf("jira sync: list PRs: %v", err)
+		return
+	}
+	keySet := map[string]bool{}
+	for _, pr := range prs {
+		if pr.TicketKey != nil {
+			keySet[*pr.TicketKey] = true
+		}
+	}
+	if len(keySet) == 0 {
+		return
+	}
+	var keys []string
+	for k := range keySet {
+		keys = append(keys, k)
+	}
+	issues, err := s.jira.FetchIssues(keys)
+	if err != nil {
+		log.Printf("jira sync: fetch: %v", err)
+		return
+	}
+	for _, issue := range issues {
+		var epicKey, epicSummary *string
+		if issue.EpicKey != "" {
+			epicKey = &issue.EpicKey
+			epicSummary = &issue.EpicSummary
+		}
+		if err := s.store.UpsertJiraIssue(issue.Key, issue.Summary, issue.Status, epicKey, epicSummary, syncedAt); err != nil {
+			log.Printf("jira sync: upsert %s: %v", issue.Key, err)
+		}
+	}
+	log.Printf("jira sync: updated %d issues", len(issues))
 }
 
 func classify(pr github.PullRequestNode, viewer, repo, syncedAt string) *db.PullRequest {

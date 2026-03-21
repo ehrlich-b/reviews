@@ -12,7 +12,9 @@ import (
 
 	"github.com/ehrlich-b/reviews/internal/db"
 	"github.com/ehrlich-b/reviews/internal/github"
+	"github.com/ehrlich-b/reviews/internal/jira"
 	"github.com/ehrlich-b/reviews/internal/server"
+	"github.com/ehrlich-b/reviews/internal/slack"
 	reviewsync "github.com/ehrlich-b/reviews/internal/sync"
 )
 
@@ -45,7 +47,35 @@ func serveCmd() {
 		syncer = reviewsync.New(gh, store)
 	}
 
-	srv := server.New(store, syncer, parseOrgs())
+	// Jira integration (optional)
+	var jiraClient *jira.Client
+	jiraBaseURL := os.Getenv("JIRA_BASE_URL")
+	jiraEmail := os.Getenv("JIRA_EMAIL")
+	jiraToken := os.Getenv("JIRA_TOKEN")
+	if jiraBaseURL != "" && jiraEmail != "" && jiraToken != "" {
+		jiraClient = jira.NewClient(jiraBaseURL, jiraEmail, jiraToken)
+		log.Printf("jira integration enabled (%s)", jiraBaseURL)
+		if syncer != nil {
+			syncer.SetJiraClient(jiraClient)
+		}
+	}
+
+	// Slack client (optional)
+	var slackClient *slack.Client
+	if slackToken := os.Getenv("SLACK_BOT_TOKEN"); slackToken != "" {
+		slackClient = slack.NewClient(slackToken)
+		log.Printf("slack client configured")
+	}
+
+	cfg := server.Config{
+		AdminToken:  os.Getenv("ADMIN_TOKEN"),
+		SlackClient: slackClient,
+		NagEnabled:  os.Getenv("NAG_ENABLED") == "true",
+		NagDryRun:   os.Getenv("NAG_DRY_RUN") == "true",
+		JiraBaseURL: jiraBaseURL,
+	}
+
+	srv := server.New(store, syncer, parseOrgs(), cfg)
 
 	log.Printf("listening on :%d (db: %s)", *port, *dbPath)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), srv))
@@ -70,6 +100,15 @@ func syncCmd(args []string) {
 
 	gh := github.NewClient(token)
 	syncer := reviewsync.New(gh, store)
+
+	// Wire Jira if configured
+	jiraBaseURL := os.Getenv("JIRA_BASE_URL")
+	jiraEmail := os.Getenv("JIRA_EMAIL")
+	jiraToken := os.Getenv("JIRA_TOKEN")
+	if jiraBaseURL != "" && jiraEmail != "" && jiraToken != "" {
+		syncer.SetJiraClient(jira.NewClient(jiraBaseURL, jiraEmail, jiraToken))
+	}
+
 	sum, err := syncer.Run(*verbose, parseOrgs())
 	if err != nil {
 		log.Fatalf("sync: %v", err)

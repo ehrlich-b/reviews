@@ -1,0 +1,243 @@
+{{define "admin"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>reviews admin</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-surface: #161b22;
+            --bg-card: #1c2128;
+            --bg-hover: #1f252d;
+            --text: #e6edf3;
+            --text-secondary: #b1bac4;
+            --text-muted: #8b949e;
+            --text-dim: #6e7681;
+            --green: #3fb950;
+            --red: #f85149;
+            --blue: #58a6ff;
+            --border: #30363d;
+            --border-subtle: #21262d;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--bg-surface);
+        }
+        .header h1 { font-size: 16px; font-weight: 600; }
+        .header a { color: var(--blue); text-decoration: none; font-size: 13px; }
+        main { max-width: 900px; margin: 0 auto; padding: 20px 24px; }
+        .section { margin-bottom: 28px; }
+        .section-header {
+            font-size: 12px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.06em; color: var(--text-muted);
+            margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+        }
+        .card {
+            border: 1px solid var(--border); border-radius: 8px;
+            background: var(--bg-surface); padding: 12px 16px; margin-bottom: 8px;
+        }
+        .card-header { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+        .member-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+        .member-tag {
+            font-size: 12px; padding: 2px 8px; border-radius: 12px;
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+            display: flex; align-items: center; gap: 4px;
+        }
+        .member-tag .remove {
+            cursor: pointer; color: var(--text-dim); font-size: 14px; line-height: 1;
+        }
+        .member-tag .remove:hover { color: var(--red); }
+        .inline-form { display: flex; gap: 4px; align-items: center; }
+        input[type="text"], select {
+            font-size: 12px; padding: 4px 8px; border-radius: 4px;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text); width: 160px;
+        }
+        select { width: auto; }
+        .btn {
+            background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border);
+            padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;
+        }
+        .btn:hover { border-color: var(--text-dim); color: var(--text); }
+        .btn-danger:hover { border-color: var(--red); color: var(--red); }
+        .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+        .btn-primary:hover { opacity: 0.9; }
+        table { width: 100%; border-collapse: collapse; }
+        th { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+        td { font-size: 13px; padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); }
+        .login-box { max-width: 300px; margin: 100px auto; text-align: center; }
+        .login-box input { width: 100%; margin-bottom: 8px; }
+        .status { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .status.error { color: var(--red); }
+        .status.success { color: var(--green); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>reviews admin</h1>
+        <a href="/">back to dashboard</a>
+    </div>
+
+    {{if not .Token}}
+    <main>
+        <div class="login-box">
+            <h2 style="margin-bottom:12px; font-size:16px">Admin Login</h2>
+            <input type="password" id="token-input" placeholder="Admin token" onkeydown="if(event.key==='Enter')loginAdmin()">
+            <button class="btn btn-primary" onclick="loginAdmin()" style="width:100%">Login</button>
+        </div>
+    </main>
+    <script>
+    function loginAdmin(){
+        var token = document.getElementById('token-input').value.trim();
+        if(!token) return;
+        localStorage.setItem('reviews-admin-token', token);
+        location.href = '/admin?token=' + encodeURIComponent(token);
+    }
+    (function(){
+        var t = localStorage.getItem('reviews-admin-token');
+        if(t) location.href = '/admin?token=' + encodeURIComponent(t);
+    })();
+    </script>
+    {{else}}
+    <main>
+        <section class="section">
+            <h2 class="section-header">Teams</h2>
+            <div id="teams-container">
+            {{range .Teams}}
+                <div class="card" id="team-{{.}}">
+                    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+                        <span>{{.}}</span>
+                        <button class="btn btn-danger" onclick="deleteTeam('{{.}}')">Delete Team</button>
+                    </div>
+                    <div class="member-list" id="members-{{.}}">
+                    {{$team := .}}
+                    {{range index $.Memberships .}}
+                        <span class="member-tag">{{.}} <span class="remove" onclick="removeMember('{{$team}}','{{.}}')">&times;</span></span>
+                    {{end}}
+                    </div>
+                    <div class="inline-form">
+                        <input type="text" placeholder="GitHub username" id="add-member-{{.}}">
+                        <button class="btn" onclick="addMember('{{.}}')">Add Member</button>
+                    </div>
+                </div>
+            {{end}}
+            </div>
+            <div class="inline-form" style="margin-top:8px">
+                <input type="text" id="new-team-name" placeholder="Team name">
+                <button class="btn btn-primary" onclick="createTeam()">Create Team</button>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-header">Slack Mappings</h2>
+            <table>
+                <thead>
+                    <tr><th>GitHub User</th><th>Slack User ID</th><th>Timezone</th><th></th></tr>
+                </thead>
+                <tbody id="slack-body">
+                {{range .SlackMappings}}
+                <tr>
+                    <td>{{.GithubUsername}}</td>
+                    <td style="font-family:monospace;font-size:11px">{{.SlackUserID}}</td>
+                    <td>{{.Timezone}}</td>
+                    <td><button class="btn btn-danger" onclick="removeSlack('{{.GithubUsername}}')">Remove</button></td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            <div class="inline-form" style="margin-top:8px">
+                <input type="text" id="slack-github" placeholder="GitHub username">
+                <input type="text" id="slack-id" placeholder="Slack user ID">
+                <select id="slack-tz">
+                    <option value="America/New_York">Eastern</option>
+                    <option value="America/Chicago">Central</option>
+                    <option value="America/Denver">Mountain</option>
+                    <option value="America/Los_Angeles">Pacific</option>
+                    <option value="UTC">UTC</option>
+                </select>
+                <button class="btn" onclick="addSlack()">Add Mapping</button>
+            </div>
+            {{if .HasSlackClient}}
+            <div style="margin-top:8px">
+                <button class="btn btn-primary" onclick="autoResolve()">Auto-resolve from Slack</button>
+                <span class="status" id="resolve-status"></span>
+            </div>
+            {{end}}
+        </section>
+    </main>
+    <script>
+    (function(){
+        var TOKEN = '{{.Token}}';
+        var headers = {'Authorization':'Bearer '+TOKEN, 'Content-Type':'application/json'};
+
+        function api(method, url, body){
+            var opts = {method:method, headers:headers};
+            if(body) opts.body = JSON.stringify(body);
+            return fetch(url, opts);
+        }
+
+        window.createTeam = function(){
+            var name = document.getElementById('new-team-name').value.trim();
+            if(!name) return;
+            api('POST','/api/admin/team',{name:name}).then(function(){ location.reload(); });
+        };
+        window.deleteTeam = function(name){
+            if(!confirm('Delete team "'+name+'"?')) return;
+            api('DELETE','/api/admin/team?name='+encodeURIComponent(name)).then(function(){ location.reload(); });
+        };
+        window.addMember = function(team){
+            var input = document.getElementById('add-member-'+team);
+            var user = input.value.trim();
+            if(!user) return;
+            api('POST','/api/admin/team/member',{team:team,username:user}).then(function(){ location.reload(); });
+        };
+        window.removeMember = function(team, user){
+            api('DELETE','/api/admin/team/member?team='+encodeURIComponent(team)+'&user='+encodeURIComponent(user)).then(function(){ location.reload(); });
+        };
+        window.addSlack = function(){
+            var gh = document.getElementById('slack-github').value.trim();
+            var sid = document.getElementById('slack-id').value.trim();
+            var tz = document.getElementById('slack-tz').value;
+            if(!gh || !sid) return;
+            api('POST','/api/admin/slack',{github_username:gh,slack_user_id:sid,timezone:tz}).then(function(){ location.reload(); });
+        };
+        window.removeSlack = function(user){
+            api('DELETE','/api/admin/slack?user='+encodeURIComponent(user)).then(function(){ location.reload(); });
+        };
+        window.autoResolve = function(){
+            var st = document.getElementById('resolve-status');
+            st.textContent = 'Resolving...';
+            st.className = 'status';
+            api('POST','/api/admin/slack/resolve').then(function(r){ return r.json(); }).then(function(data){
+                if(data.matched && data.matched.length > 0){
+                    var saves = data.matched.map(function(m){
+                        return api('POST','/api/admin/slack',{github_username:m.github_username,slack_user_id:m.slack_user_id,timezone:'America/New_York'});
+                    });
+                    Promise.all(saves).then(function(){
+                        st.textContent = 'Matched '+data.matched.length+', unresolved: '+(data.unresolved||[]).join(', ');
+                        st.className = 'status success';
+                        setTimeout(function(){ location.reload(); }, 1500);
+                    });
+                } else {
+                    st.textContent = 'No matches. Unresolved: '+(data.unresolved||[]).join(', ');
+                    st.className = 'status error';
+                }
+            }).catch(function(err){
+                st.textContent = 'Error: '+err;
+                st.className = 'status error';
+            });
+        };
+    })();
+    </script>
+    {{end}}
+</body>
+</html>
+{{end}}

@@ -158,39 +158,198 @@ func (s *Store) ListPRs() ([]*PullRequest, error) {
 	return prs, nil
 }
 
-func (s *Store) AddTeamMember(username string) error {
-	_, err := s.db.Exec(`INSERT INTO team_members (username) VALUES (?)
-		ON CONFLICT(username) DO NOTHING`, username)
+// Named teams
+
+func (s *Store) CreateTeam(name string) error {
+	_, err := s.db.Exec(`INSERT INTO teams (name) VALUES (?) ON CONFLICT(name) DO NOTHING`, name)
 	if err != nil {
-		return fmt.Errorf("add team member: %w", err)
+		return fmt.Errorf("create team: %w", err)
 	}
 	return nil
 }
 
-func (s *Store) RemoveTeamMember(username string) error {
-	_, err := s.db.Exec("DELETE FROM team_members WHERE username = ?", username)
+func (s *Store) DeleteTeam(name string) error {
+	_, err := s.db.Exec("DELETE FROM teams WHERE name = ?", name)
 	if err != nil {
-		return fmt.Errorf("remove team member: %w", err)
+		return fmt.Errorf("delete team: %w", err)
 	}
 	return nil
 }
 
-func (s *Store) ListTeamMembers() ([]string, error) {
-	rows, err := s.db.Query("SELECT username FROM team_members ORDER BY username")
+func (s *Store) ListTeams() ([]string, error) {
+	rows, err := s.db.Query("SELECT name FROM teams ORDER BY name")
 	if err != nil {
-		return nil, fmt.Errorf("list team members: %w", err)
+		return nil, fmt.Errorf("list teams: %w", err)
 	}
 	defer rows.Close()
-
-	var members []string
+	var teams []string
 	for rows.Next() {
-		var u string
-		if err := rows.Scan(&u); err != nil {
-			return nil, fmt.Errorf("scan team member: %w", err)
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, fmt.Errorf("scan team: %w", err)
 		}
-		members = append(members, u)
+		teams = append(teams, t)
 	}
-	return members, nil
+	return teams, rows.Err()
+}
+
+func (s *Store) AddTeamMembership(team, username string) error {
+	_, err := s.db.Exec(`INSERT INTO team_memberships (team_name, username) VALUES (?, ?)
+		ON CONFLICT(team_name, username) DO NOTHING`, team, username)
+	if err != nil {
+		return fmt.Errorf("add team membership: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RemoveTeamMembership(team, username string) error {
+	_, err := s.db.Exec("DELETE FROM team_memberships WHERE team_name = ? AND username = ?", team, username)
+	if err != nil {
+		return fmt.Errorf("remove team membership: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListTeamMemberships() (map[string][]string, error) {
+	rows, err := s.db.Query("SELECT team_name, username FROM team_memberships ORDER BY team_name, username")
+	if err != nil {
+		return nil, fmt.Errorf("list team memberships: %w", err)
+	}
+	defer rows.Close()
+	result := map[string][]string{}
+	for rows.Next() {
+		var team, user string
+		if err := rows.Scan(&team, &user); err != nil {
+			return nil, fmt.Errorf("scan membership: %w", err)
+		}
+		result[team] = append(result[team], user)
+	}
+	return result, rows.Err()
+}
+
+// Slack mappings
+
+type SlackMapping struct {
+	GithubUsername string
+	SlackUserID   string
+	Timezone      string
+}
+
+func (s *Store) SetSlackMapping(githubUsername, slackUserID, timezone string) error {
+	_, err := s.db.Exec(`INSERT INTO slack_mappings (github_username, slack_user_id, timezone) VALUES (?, ?, ?)
+		ON CONFLICT(github_username) DO UPDATE SET slack_user_id=excluded.slack_user_id, timezone=excluded.timezone`,
+		githubUsername, slackUserID, timezone)
+	if err != nil {
+		return fmt.Errorf("set slack mapping: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RemoveSlackMapping(githubUsername string) error {
+	_, err := s.db.Exec("DELETE FROM slack_mappings WHERE github_username = ?", githubUsername)
+	if err != nil {
+		return fmt.Errorf("remove slack mapping: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListSlackMappings() ([]SlackMapping, error) {
+	rows, err := s.db.Query("SELECT github_username, slack_user_id, timezone FROM slack_mappings ORDER BY github_username")
+	if err != nil {
+		return nil, fmt.Errorf("list slack mappings: %w", err)
+	}
+	defer rows.Close()
+	var mappings []SlackMapping
+	for rows.Next() {
+		var m SlackMapping
+		if err := rows.Scan(&m.GithubUsername, &m.SlackUserID, &m.Timezone); err != nil {
+			return nil, fmt.Errorf("scan slack mapping: %w", err)
+		}
+		mappings = append(mappings, m)
+	}
+	return mappings, rows.Err()
+}
+
+// Nag log
+
+func (s *Store) GetLastNag(prKey string) (string, error) {
+	var naggedAt string
+	err := s.db.QueryRow("SELECT nagged_at FROM nag_log WHERE pr_key = ?", prKey).Scan(&naggedAt)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get last nag: %w", err)
+	}
+	return naggedAt, nil
+}
+
+func (s *Store) SetLastNag(prKey, naggedAt string) error {
+	_, err := s.db.Exec(`INSERT INTO nag_log (pr_key, nagged_at) VALUES (?, ?)
+		ON CONFLICT(pr_key) DO UPDATE SET nagged_at=excluded.nagged_at`, prKey, naggedAt)
+	if err != nil {
+		return fmt.Errorf("set last nag: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) PruneNagLog() error {
+	_, err := s.db.Exec(`DELETE FROM nag_log WHERE pr_key NOT IN
+		(SELECT repo || '#' || number FROM pull_requests)`)
+	if err != nil {
+		return fmt.Errorf("prune nag log: %w", err)
+	}
+	return nil
+}
+
+// Jira issues
+
+type JiraIssue struct {
+	Key         string
+	Summary     string
+	Status      string
+	EpicKey     *string
+	EpicSummary *string
+}
+
+func (s *Store) UpsertJiraIssue(key, summary, status string, epicKey, epicSummary *string, syncedAt string) error {
+	_, err := s.db.Exec(`INSERT INTO jira_issues (key, summary, status, epic_key, epic_summary, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET summary=excluded.summary, status=excluded.status,
+		epic_key=excluded.epic_key, epic_summary=excluded.epic_summary, synced_at=excluded.synced_at`,
+		key, summary, status, epicKey, epicSummary, syncedAt)
+	if err != nil {
+		return fmt.Errorf("upsert jira issue: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetJiraIssues(keys []string) (map[string]*JiraIssue, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(keys))
+	args := make([]any, len(keys))
+	for i, k := range keys {
+		placeholders[i] = "?"
+		args[i] = k
+	}
+	query := fmt.Sprintf("SELECT key, summary, status, epic_key, epic_summary FROM jira_issues WHERE key IN (%s)",
+		strings.Join(placeholders, ","))
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get jira issues: %w", err)
+	}
+	defer rows.Close()
+	result := map[string]*JiraIssue{}
+	for rows.Next() {
+		var j JiraIssue
+		if err := rows.Scan(&j.Key, &j.Summary, &j.Status, &j.EpicKey, &j.EpicSummary); err != nil {
+			return nil, fmt.Errorf("scan jira issue: %w", err)
+		}
+		result[j.Key] = &j
+	}
+	return result, rows.Err()
 }
 
 func (s *Store) GetSyncInfo() (repoCount int, prCount int, lastSync string, err error) {

@@ -152,7 +152,7 @@
             display: flex;
             gap: 3px;
             overflow-x: auto;
-            flex-shrink: 1;
+            flex: 1 1 0;
             min-width: 0;
             scrollbar-width: none;
             -ms-overflow-style: none;
@@ -251,7 +251,7 @@
         .ticket-card {
             border: 1px solid var(--border);
             border-radius: 8px;
-            overflow: hidden;
+            overflow: clip;
             background: var(--bg-surface);
             margin-bottom: 10px;
         }
@@ -340,7 +340,6 @@
             border-color: var(--green-muted);
             color: #fff;
             background: var(--green-muted);
-            margin-right: 4px;
         }
         .btn-reviewed:hover { background: var(--green); }
         .btn-dismiss {
@@ -348,8 +347,40 @@
             color: var(--text-muted);
             background: var(--bg-card);
             padding: 4px 12px;
+            margin-right: 4px;
         }
         .btn-dismiss:hover { background: rgba(248,81,73,0.1); color: var(--red); border-color: var(--red-muted); }
+
+        /* Overflow menu */
+        .overflow-menu { position: relative; display: inline-block; }
+        .btn-overflow {
+            font-size: 14px; padding: 2px 8px; border-radius: 4px;
+            border: 1px solid var(--border); background: var(--bg-card);
+            color: var(--text-muted); cursor: pointer; line-height: 1;
+        }
+        .btn-overflow:hover { color: var(--text); border-color: var(--text-dim); }
+        .overflow-dropdown {
+            display: none; position: absolute; right: 0; top: 100%; margin-top: 2px;
+            background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 20; min-width: 100px; padding: 4px 0;
+        }
+        .overflow-dropdown.open { display: block; }
+        .overflow-item {
+            display: block; width: 100%; padding: 4px 12px; font-size: 12px;
+            border: none; background: none; color: var(--text-secondary); cursor: pointer;
+            text-align: left; white-space: nowrap;
+        }
+        .overflow-item:hover { background: var(--bg-hover); color: var(--text); }
+
+        /* Jira ticket styling */
+        .ticket-summary { color: var(--text-secondary); font-size: 11px; margin-left: 6px; }
+        .ticket-status {
+            font-size: 10px; padding: 1px 6px; border-radius: 8px;
+            background: var(--bg-hover); color: var(--text-muted); margin-left: 6px;
+            font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em;
+        }
+        .ticket-key a { color: var(--blue); text-decoration: none; }
+        .ticket-key a:hover { text-decoration: underline; }
         .btn-undo {
             font-size: 12px;
             padding: 4px 12px;
@@ -457,7 +488,7 @@
         </div>
     </div>
     <div class="filter-toolbar" id="filter-toolbar">
-        <button class="btn org-toggle" id="team-toggle" onclick="toggleTeam()">Team</button>
+        {{range .Teams}}<button class="btn org-toggle team-pill" data-team-name="{{.Name}}" onclick="toggleTeamPill(this)">{{.Name}}</button>{{end}}
         <div class="filter-sep"></div>
         <div class="repo-pills" id="repo-pills">
             {{range $g := .RepoGroups}}<span class="owner-label" data-owner="{{$g.Owner}}" onclick="toggleOwner(this)">{{$g.Owner}}</span>{{range $g.Repos}}<button class="repo-pill active" data-repo="{{.}}" data-owner="{{$g.Owner}}" onclick="toggleRepo(this)">{{.}}</button>{{end}}{{end}}
@@ -597,17 +628,17 @@
             document.querySelectorAll('.pr-row[data-pr-key]').forEach(function(row){
                 var key = row.dataset.prKey;
                 var act = actions[key];
-                var reviewed = row.querySelector('.btn-reviewed');
                 var dismiss = row.querySelector('.btn-dismiss');
+                var overflowMenu = row.querySelector('.overflow-menu');
                 var undo = row.querySelector('.btn-undo');
-                if(!reviewed || !dismiss || !undo) return;
+                if(!dismiss || !undo) return;
 
                 // Reset
                 row.classList.remove('action-reviewed','action-dismissed');
 
                 if(!act){
-                    reviewed.style.display = '';
                     dismiss.style.display = '';
+                    if(overflowMenu) overflowMenu.style.display = '';
                     undo.style.display = 'none';
                     return;
                 }
@@ -617,8 +648,8 @@
                     if(act.commit && row.dataset.commit && act.commit !== row.dataset.commit){
                         delete actions[key];
                         saveActions(actions);
-                        reviewed.style.display = '';
                         dismiss.style.display = '';
+                        if(overflowMenu) overflowMenu.style.display = '';
                         undo.style.display = 'none';
                         return;
                     }
@@ -629,8 +660,8 @@
                     undo.textContent = 'Undismiss';
                 }
 
-                reviewed.style.display = 'none';
                 dismiss.style.display = 'none';
+                if(overflowMenu) overflowMenu.style.display = 'none';
                 undo.style.display = '';
             });
 
@@ -656,9 +687,9 @@
                         undoBtn.style.display = '';
                         undoBtn.onclick = function(){ undoAction(undoBtn); };
                     }
-                    var rb = clone.querySelector('.btn-reviewed');
+                    var om = clone.querySelector('.overflow-menu');
                     var db = clone.querySelector('.btn-dismiss');
-                    if(rb) rb.style.display = 'none';
+                    if(om) om.style.display = 'none';
                     if(db) db.style.display = 'none';
                     if(act.action === 'reviewed'){
                         if(undoBtn) undoBtn.textContent = 'Undo Reviewed';
@@ -779,11 +810,13 @@
         function saveFilterState(){
             var activeRepos = [];
             document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos.push(el.dataset.repo); });
+            var activeTeams = [];
+            document.querySelectorAll('.team-pill.active').forEach(function(el){ activeTeams.push(el.dataset.teamName); });
             var f = {
                 repos: activeRepos,
                 ci: document.getElementById('f-ci').value,
                 drafts: document.getElementById('f-drafts').checked,
-                teamOnly: document.getElementById('team-toggle').classList.contains('active')
+                teams: activeTeams
             };
             LS.setItem(FILTER_KEY, JSON.stringify(f));
         }
@@ -798,7 +831,16 @@
                 }
                 if(f.ci) document.getElementById('f-ci').value = f.ci;
                 if(f.drafts !== undefined) document.getElementById('f-drafts').checked = f.drafts;
-                if(f.teamOnly) document.getElementById('team-toggle').classList.add('active');
+                if(f.teams && f.teams.length > 0){
+                    document.querySelectorAll('.team-pill').forEach(function(el){
+                        if(f.teams.indexOf(el.dataset.teamName) >= 0) el.classList.add('active');
+                        else el.classList.remove('active');
+                    });
+                }
+                // Migrate old teamOnly to new format
+                if(f.teamOnly && !f.teams){
+                    document.querySelectorAll('.team-pill').forEach(function(el){ el.classList.add('active'); });
+                }
             }catch(e){}
         }
 
@@ -809,7 +851,17 @@
             document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos[el.dataset.repo] = true; });
             var ciFilter = document.getElementById('f-ci').value;
             var hideDrafts = document.getElementById('f-drafts').checked;
-            var teamOnly = document.getElementById('team-toggle').classList.contains('active');
+
+            // Team pill filter: union of active team pills
+            var activeTeamPills = document.querySelectorAll('.team-pill.active');
+            var teamFiltering = activeTeamPills.length > 0;
+            var teamFilterSet = {};
+            if(teamFiltering){
+                activeTeamPills.forEach(function(el){
+                    var teamName = el.dataset.teamName;
+                    // el has no member list; use data-teams on rows
+                });
+            }
 
             document.querySelectorAll('.pr-row[data-pr-key]').forEach(function(el){
                 var hide = false;
@@ -817,7 +869,14 @@
                 if(ciFilter === 'passing' && el.dataset.ci && el.dataset.ci !== 'success') hide = true;
                 if(ciFilter === 'failing' && el.dataset.ci !== 'failure' && el.dataset.ci !== 'error') hide = true;
                 if(hideDrafts && el.dataset.draft === 'true') hide = true;
-                if(teamOnly && el.dataset.team !== 'true') hide = true;
+                if(teamFiltering){
+                    var rowTeams = (el.dataset.teams || '').split(',').filter(Boolean);
+                    var inTeam = false;
+                    activeTeamPills.forEach(function(pill){
+                        if(rowTeams.indexOf(pill.dataset.teamName) >= 0) inTeam = true;
+                    });
+                    if(!inTeam) hide = true;
+                }
 
                 if(hide) el.classList.add('filter-hidden');
                 else el.classList.remove('filter-hidden');
@@ -864,13 +923,26 @@
             applyAllFilters();
         };
 
-        // Team toggle
-        window.toggleTeam = function(){
-            var btn = document.getElementById('team-toggle');
+        // Team pill toggle
+        window.toggleTeamPill = function(btn){
             btn.classList.toggle('active');
             saveFilterState();
             applyAllFilters();
         };
+
+        // Overflow menu
+        window.toggleOverflow = function(btn){
+            var dropdown = btn.parentElement.querySelector('.overflow-dropdown');
+            var wasOpen = dropdown.classList.contains('open');
+            closeAllOverflows();
+            if(!wasOpen) dropdown.classList.add('open');
+        };
+        function closeAllOverflows(){
+            document.querySelectorAll('.overflow-dropdown.open').forEach(function(d){ d.classList.remove('open'); });
+        }
+        document.addEventListener('click', function(e){
+            if(!e.target.closest('.overflow-menu')) closeAllOverflows();
+        });
 
         // Column sorting
         var sortState = {};
