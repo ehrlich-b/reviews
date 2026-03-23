@@ -16,6 +16,7 @@ type PullRequest struct {
 	URL                  string
 	Draft                bool
 	CommentCount         int
+	CreatedAt            string
 	UpdatedAt            string
 	TicketKey            *string
 	CIStatus             *string
@@ -32,21 +33,21 @@ type PullRequest struct {
 
 func (s *Store) UpsertPR(pr *PullRequest) error {
 	_, err := s.db.Exec(`INSERT INTO pull_requests
-		(repo, number, title, author, author_avatar, url, draft, comment_count, updated_at,
+		(repo, number, title, author, author_avatar, url, draft, comment_count, created_at, updated_at,
 		 ticket_key, ci_status, review_status, triage_bucket, triage_reason,
 		 last_commit_at, last_review_activity_at, approvers, additions, deletions, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo, number) DO UPDATE SET
 			title=excluded.title, author=excluded.author, author_avatar=excluded.author_avatar,
 			url=excluded.url, draft=excluded.draft, comment_count=excluded.comment_count,
-			updated_at=excluded.updated_at, ticket_key=excluded.ticket_key,
+			created_at=excluded.created_at, updated_at=excluded.updated_at, ticket_key=excluded.ticket_key,
 			ci_status=excluded.ci_status, review_status=excluded.review_status,
 			triage_bucket=excluded.triage_bucket, triage_reason=excluded.triage_reason,
 			last_commit_at=excluded.last_commit_at, last_review_activity_at=excluded.last_review_activity_at,
 			approvers=excluded.approvers, additions=excluded.additions, deletions=excluded.deletions,
 			synced_at=excluded.synced_at`,
 		pr.Repo, pr.Number, pr.Title, pr.Author, pr.AuthorAvatar, pr.URL,
-		pr.Draft, pr.CommentCount, pr.UpdatedAt,
+		pr.Draft, pr.CommentCount, pr.CreatedAt, pr.UpdatedAt,
 		pr.TicketKey, pr.CIStatus, pr.ReviewStatus, pr.TriageBucket, pr.TriageReason,
 		pr.LastCommitAt, pr.LastReviewActivityAt, pr.Approvers, pr.Additions, pr.Deletions, pr.SyncedAt)
 	if err != nil {
@@ -134,9 +135,9 @@ func (s *Store) GetConfig(key string) (string, error) {
 
 func (s *Store) ListPRs() ([]*PullRequest, error) {
 	rows, err := s.db.Query(`SELECT id, repo, number, title, author, author_avatar, url, draft,
-		comment_count, updated_at, ticket_key, ci_status, review_status, triage_bucket,
+		comment_count, created_at, updated_at, ticket_key, ci_status, review_status, triage_bucket,
 		triage_reason, last_commit_at, last_review_activity_at, approvers, additions, deletions, synced_at
-		FROM pull_requests ORDER BY updated_at DESC`)
+		FROM pull_requests ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list PRs: %w", err)
 	}
@@ -146,7 +147,7 @@ func (s *Store) ListPRs() ([]*PullRequest, error) {
 	for rows.Next() {
 		pr := &PullRequest{}
 		err := rows.Scan(&pr.ID, &pr.Repo, &pr.Number, &pr.Title, &pr.Author,
-			&pr.AuthorAvatar, &pr.URL, &pr.Draft, &pr.CommentCount, &pr.UpdatedAt,
+			&pr.AuthorAvatar, &pr.URL, &pr.Draft, &pr.CommentCount, &pr.CreatedAt, &pr.UpdatedAt,
 			&pr.TicketKey, &pr.CIStatus, &pr.ReviewStatus, &pr.TriageBucket,
 			&pr.TriageReason, &pr.LastCommitAt, &pr.LastReviewActivityAt,
 			&pr.Approvers, &pr.Additions, &pr.Deletions, &pr.SyncedAt)
@@ -350,6 +351,23 @@ func (s *Store) GetJiraIssues(keys []string) (map[string]*JiraIssue, error) {
 		result[j.Key] = &j
 	}
 	return result, rows.Err()
+}
+
+func (s *Store) ListPRAuthors() ([]string, error) {
+	rows, err := s.db.Query("SELECT DISTINCT author FROM pull_requests WHERE author != '' ORDER BY author")
+	if err != nil {
+		return nil, fmt.Errorf("list pr authors: %w", err)
+	}
+	defer rows.Close()
+	var authors []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, fmt.Errorf("scan author: %w", err)
+		}
+		authors = append(authors, a)
+	}
+	return authors, nil
 }
 
 func (s *Store) GetSyncInfo() (repoCount int, prCount int, lastSync string, err error) {

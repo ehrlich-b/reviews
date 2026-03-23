@@ -7,10 +7,10 @@ test:
 	go test ./...
 
 run: build
-	./reviews
+	set -a && . ./.env && set +a && ./reviews
 
 dev:
-	air -build.cmd "go build -o ./tmp/reviews ./cmd/reviews" -build.bin "./tmp/reviews" -build.include_ext "go,html,css,js,sql"
+	set -a && . ./.env && set +a && air -build.cmd "go build -o ./tmp/reviews ./cmd/reviews" -build.bin "./tmp/reviews" -build.include_ext "go,html,css,js,sql"
 
 clean:
 	rm -f reviews

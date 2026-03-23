@@ -1,7 +1,10 @@
 package server
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -9,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	gosync "sync"
 	"time"
@@ -38,6 +42,9 @@ type Server struct {
 	lastSyncComplete time.Time
 	syncPending      bool
 	syncRunning      bool
+
+	slackCacheMu gosync.RWMutex
+	slackCache   []slack.SlackUser
 }
 
 type Config struct {
@@ -101,7 +108,32 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string, cfg Config) 
 		go s.nagLoop()
 	}
 
+	if s.slackClient != nil {
+		go s.slackCacheLoop()
+	}
+
 	return s
+}
+
+func (s *Server) refreshSlackCache() {
+	users, err := s.slackClient.ListUsers()
+	if err != nil {
+		log.Printf("slack cache refresh: %v", err)
+		return
+	}
+	s.slackCacheMu.Lock()
+	s.slackCache = users
+	s.slackCacheMu.Unlock()
+	log.Printf("slack cache: %d users", len(users))
+}
+
+func (s *Server) slackCacheLoop() {
+	s.refreshSlackCache()
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.refreshSlackCache()
+	}
 }
 
 func (s *Server) requestSync() string {
@@ -178,13 +210,16 @@ func (s *Server) routes() {
 
 	// Admin routes
 	s.mux.HandleFunc("GET /admin", s.handleAdmin)
+	s.mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
 	s.mux.HandleFunc("POST /api/admin/team", s.adminAuth(s.handleAdminCreateTeam))
 	s.mux.HandleFunc("DELETE /api/admin/team", s.adminAuth(s.handleAdminDeleteTeam))
 	s.mux.HandleFunc("POST /api/admin/team/member", s.adminAuth(s.handleAdminAddMember))
 	s.mux.HandleFunc("DELETE /api/admin/team/member", s.adminAuth(s.handleAdminRemoveMember))
 	s.mux.HandleFunc("POST /api/admin/slack", s.adminAuth(s.handleAdminSetSlack))
 	s.mux.HandleFunc("DELETE /api/admin/slack", s.adminAuth(s.handleAdminRemoveSlack))
-	s.mux.HandleFunc("POST /api/admin/slack/resolve", s.adminAuth(s.handleAdminSlackResolve))
+	s.mux.HandleFunc("GET /api/admin/slack/mappings", s.adminAuth(s.handleAdminSlackMappings))
+	s.mux.HandleFunc("GET /api/admin/slack/users", s.adminAuth(s.handleAdminSlackUsers))
+	s.mux.HandleFunc("GET /api/admin/github/users", s.adminAuth(s.handleAdminGithubUsers))
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
@@ -215,26 +250,83 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// signAdminToken creates an HMAC-signed session token: base64(expiry|sig)
+func (s *Server) signAdminToken(expiry time.Time) string {
+	exp := strconv.FormatInt(expiry.Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(s.adminToken))
+	mac.Write([]byte(exp))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return base64.RawURLEncoding.EncodeToString([]byte(exp + "|" + sig))
+}
+
+// verifyAdminToken checks the HMAC-signed session token
+func (s *Server) verifyAdminToken(token string) bool {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(string(raw), "|", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	exp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || time.Now().Unix() > exp {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(s.adminToken))
+	mac.Write([]byte(parts[0]))
+	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(parts[1]), []byte(expected))
+}
+
+func (s *Server) adminAuthed(r *http.Request) bool {
+	if s.adminToken == "" {
+		return false
+	}
+	c, err := r.Cookie("reviews_admin")
+	if err != nil {
+		return false
+	}
+	return s.verifyAdminToken(c.Value)
+}
+
 // Admin auth middleware
 func (s *Server) adminAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.adminToken == "" {
-			http.Error(w, "admin not configured", 503)
-			return
-		}
-		token := r.URL.Query().Get("token")
-		if token == "" {
-			auth := r.Header.Get("Authorization")
-			if strings.HasPrefix(auth, "Bearer ") {
-				token = auth[7:]
-			}
-		}
-		if token != s.adminToken {
+		if !s.adminAuthed(r) {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	if s.adminToken == "" {
+		http.Error(w, "admin not configured (set ADMIN_TOKEN)", 503)
+		return
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Token == "" {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if body.Token != s.adminToken {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	signed := s.signAdminToken(time.Now().Add(7 * 24 * time.Hour))
+	http.SetCookie(w, &http.Cookie{
+		Name:     "reviews_admin",
+		Value:    signed,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 60 * 60,
+	})
+	w.WriteHeader(204)
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
@@ -243,9 +335,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := r.URL.Query().Get("token")
-	if token != s.adminToken {
-		// Show login page
+	if !s.adminAuthed(r) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := s.tmpl.ExecuteTemplate(w, "admin", nil); err != nil {
 			log.Printf("render admin: %v", err)
@@ -258,14 +348,14 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	slackMappings, _ := s.store.ListSlackMappings()
 
 	type adminData struct {
-		Token          string
+		Authed         bool
 		Teams          []string
 		Memberships    map[string][]string
 		SlackMappings  []db.SlackMapping
 		HasSlackClient bool
 	}
 	data := adminData{
-		Token:          s.adminToken,
+		Authed:         true,
 		Teams:          teams,
 		Memberships:    memberships,
 		SlackMappings:  slackMappings,
@@ -375,68 +465,33 @@ func (s *Server) handleAdminRemoveSlack(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(204)
 }
 
-func (s *Server) handleAdminSlackResolve(w http.ResponseWriter, r *http.Request) {
-	if s.slackClient == nil {
-		http.Error(w, "no Slack client configured", 503)
-		return
-	}
-	slackUsers, err := s.slackClient.ListUsers()
-	if err != nil {
-		log.Printf("slack resolve: %v", err)
-		http.Error(w, "slack API error", 502)
-		return
-	}
 
-	memberships, err := s.store.ListTeamMemberships()
+func (s *Server) handleAdminSlackMappings(w http.ResponseWriter, r *http.Request) {
+	mappings, err := s.store.ListSlackMappings()
 	if err != nil {
 		http.Error(w, "internal error", 500)
 		return
 	}
-
-	// Collect all unique team member usernames
-	memberSet := map[string]bool{}
-	for _, users := range memberships {
-		for _, u := range users {
-			memberSet[u] = true
-		}
-	}
-
-	type match struct {
-		GithubUsername string `json:"github_username"`
-		SlackUserID   string `json:"slack_user_id"`
-		SlackName     string `json:"slack_name"`
-	}
-
-	// Build lowercase name -> slack user map
-	slackByName := map[string]slack.SlackUser{}
-	for _, su := range slackUsers {
-		if su.DisplayName != "" {
-			slackByName[strings.ToLower(su.DisplayName)] = su
-		}
-		if su.RealName != "" {
-			slackByName[strings.ToLower(su.RealName)] = su
-		}
-	}
-
-	var matched []match
-	var unresolved []string
-	for ghUser := range memberSet {
-		if su, ok := slackByName[strings.ToLower(ghUser)]; ok {
-			matched = append(matched, match{
-				GithubUsername: ghUser,
-				SlackUserID:   su.ID,
-				SlackName:     su.DisplayName,
-			})
-		} else {
-			unresolved = append(unresolved, ghUser)
-		}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"matched":    matched,
-		"unresolved": unresolved,
-	})
+	json.NewEncoder(w).Encode(mappings)
+}
+
+func (s *Server) handleAdminSlackUsers(w http.ResponseWriter, r *http.Request) {
+	s.slackCacheMu.RLock()
+	users := s.slackCache
+	s.slackCacheMu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
+}
+
+func (s *Server) handleAdminGithubUsers(w http.ResponseWriter, r *http.Request) {
+	authors, err := s.store.ListPRAuthors()
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(authors)
 }
 
 // Nag system
@@ -476,12 +531,16 @@ func (s *Server) runNag() {
 		mappingByUser[m.GithubUsername] = m
 	}
 
-	// Group author_court PRs by author
+	// Group open PRs by author, skip PRs less than 7 days old
 	authorPRs := map[string][]*db.PullRequest{}
 	for _, pr := range prs {
-		if pr.TriageBucket == "author_court" {
-			authorPRs[pr.Author] = append(authorPRs[pr.Author], pr)
+		if pr.CreatedAt != "" {
+			created, err := time.Parse(time.RFC3339, pr.CreatedAt)
+			if err == nil && time.Since(created) < 7*24*time.Hour {
+				continue
+			}
 		}
+		authorPRs[pr.Author] = append(authorPRs[pr.Author], pr)
 	}
 
 	nagCount := 0
@@ -491,60 +550,57 @@ func (s *Server) runNag() {
 			continue
 		}
 
-		// Check if it's ~1pm in their timezone
+		// Must be 1pm-5pm in their local timezone
 		loc, err := time.LoadLocation(mapping.Timezone)
 		if err != nil {
 			log.Printf("nag: bad timezone %q for %s: %v", mapping.Timezone, author, err)
 			continue
 		}
 		now := time.Now().In(loc)
-		if now.Hour() != 13 || now.Minute() > 5 {
+		if now.Hour() < 13 || now.Hour() > 16 {
 			continue
 		}
 
-		// Filter PRs not yet nagged today
+		// Check if already nagged today (per-author, not per-PR)
+		authorKey := "author:" + author
 		today := now.Format("2006-01-02")
-		var toNag []*db.PullRequest
-		for _, pr := range prList {
-			prKey := fmt.Sprintf("%s#%d", pr.Repo, pr.Number)
-			lastNag, _ := s.store.GetLastNag(prKey)
-			if lastNag != "" {
-				// Parse nagged_at in user's timezone to see if same calendar date
-				nagTime, err := time.Parse(time.RFC3339, lastNag)
-				if err == nil && nagTime.In(loc).Format("2006-01-02") == today {
-					continue
-				}
+		lastNag, _ := s.store.GetLastNag(authorKey)
+		if lastNag != "" {
+			nagTime, err := time.Parse(time.RFC3339, lastNag)
+			if err == nil && nagTime.In(loc).Format("2006-01-02") == today {
+				continue
 			}
-			toNag = append(toNag, pr)
-		}
-
-		if len(toNag) == 0 {
-			continue
 		}
 
 		// Build message
 		var lines []string
-		lines = append(lines, fmt.Sprintf("You have %d PRs waiting on you:", len(toNag)))
-		for _, pr := range toNag {
-			lines = append(lines, fmt.Sprintf("  - %s#%d: %s (%s)", shortRepo(pr.Repo), pr.Number, pr.Title, pr.URL))
+		lines = append(lines, fmt.Sprintf("You have %d PRs waiting on you:", len(prList)))
+		for _, pr := range prList {
+			line := fmt.Sprintf("  - %s#%d: %s (%s)", shortRepo(pr.Repo), pr.Number, pr.Title, pr.URL)
+			if pr.CreatedAt != "" {
+				if created, err := time.Parse(time.RFC3339, pr.CreatedAt); err == nil {
+					days := int(time.Since(created).Hours() / 24)
+					if days >= 14 {
+						line += fmt.Sprintf(" (open for %d days)", days)
+					}
+				}
+			}
+			lines = append(lines, line)
 		}
 		msg := strings.Join(lines, "\n")
+
+		// Record BEFORE sending — if Slack fails we skip for the day rather than risk turbo-blasting
+		naggedAt := time.Now().UTC().Format(time.RFC3339)
+		s.store.SetLastNag(authorKey, naggedAt)
 
 		if dryRun {
 			log.Printf("nag [dry-run] would DM %s (%s): %s", author, mapping.Timezone, msg)
 		} else {
 			if err := s.slackClient.SendDM(mapping.SlackUserID, msg); err != nil {
-				log.Printf("nag: send DM to %s: %v", author, err)
+				log.Printf("nag: send DM to %s failed (will retry tomorrow): %v", author, err)
 				continue
 			}
-			log.Printf("nag: sent DM to %s (%d PRs)", author, len(toNag))
-		}
-
-		// Record nag
-		naggedAt := time.Now().UTC().Format(time.RFC3339)
-		for _, pr := range toNag {
-			prKey := fmt.Sprintf("%s#%d", pr.Repo, pr.Number)
-			s.store.SetLastNag(prKey, naggedAt)
+			log.Printf("nag: sent DM to %s (%d PRs)", author, len(prList))
 		}
 		nagCount++
 	}
@@ -562,7 +618,7 @@ type ticketGroup struct {
 	Additions       int
 	Deletions       int
 	LastActivity    string
-	OldestUpdatedAt string
+	OldestCreatedAt string
 	JiraSummary     string
 	JiraStatus      string
 	EpicKey         string
@@ -808,13 +864,13 @@ func groupByTicket(prs []*db.PullRequest) []ticketGroup {
 		if pr.UpdatedAt > g.LastActivity {
 			g.LastActivity = pr.UpdatedAt
 		}
-		if g.OldestUpdatedAt == "" || pr.UpdatedAt < g.OldestUpdatedAt {
-			g.OldestUpdatedAt = pr.UpdatedAt
+		if g.OldestCreatedAt == "" || pr.CreatedAt < g.OldestCreatedAt {
+			g.OldestCreatedAt = pr.CreatedAt
 		}
 	}
 
 	sort.SliceStable(order, func(i, j int) bool {
-		return groups[order[i]].OldestUpdatedAt < groups[order[j]].OldestUpdatedAt
+		return groups[order[i]].OldestCreatedAt < groups[order[j]].OldestCreatedAt
 	})
 	var result []ticketGroup
 	for _, key := range order {
@@ -825,7 +881,7 @@ func groupByTicket(prs []*db.PullRequest) []ticketGroup {
 			if si != sj {
 				return si < sj
 			}
-			return g.PRs[i].UpdatedAt < g.PRs[j].UpdatedAt
+			return g.PRs[i].CreatedAt < g.PRs[j].CreatedAt
 		})
 		result = append(result, *g)
 	}

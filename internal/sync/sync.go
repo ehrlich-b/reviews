@@ -191,6 +191,7 @@ func classify(pr github.PullRequestNode, viewer, repo, syncedAt string) *db.Pull
 		CommentCount: len(pr.Comments.Nodes),
 		Additions:    pr.Additions,
 		Deletions:    pr.Deletions,
+		CreatedAt:    pr.CreatedAt,
 		UpdatedAt:    pr.UpdatedAt,
 		SyncedAt:     syncedAt,
 	}

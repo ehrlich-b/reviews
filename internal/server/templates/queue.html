@@ -30,7 +30,7 @@
                 <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
                 <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
                 <td class="cell-loc">{{loc .Additions .Deletions}}</td>
-                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                <td class="cell-age">{{reltime .CreatedAt}}</td>
             </tr>
             {{end}}
             {{range .YourChanges}}
@@ -40,7 +40,7 @@
                 <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
                 <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
                 <td class="cell-loc">{{loc .Additions .Deletions}}</td>
-                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                <td class="cell-age">{{reltime .CreatedAt}}</td>
             </tr>
             {{end}}
             {{range .YourWaiting}}
@@ -50,7 +50,7 @@
                 <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
                 <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
                 <td class="cell-loc">{{loc .Additions .Deletions}}</td>
-                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                <td class="cell-age">{{reltime .CreatedAt}}</td>
             </tr>
             {{end}}
             </tbody>
@@ -117,7 +117,7 @@
                         {{if index $.AuthorTeams .Author}}data-teams="{{join (index $.AuthorTeams .Author) ","}}"{{end}}
                         data-sort-repo="{{shortRepo .Repo}}"
                         data-sort-number="{{.Number}}"
-                        data-sort-age="{{epoch .UpdatedAt}}"
+                        data-sort-age="{{epoch .CreatedAt}}"
                         data-sort-loc="{{add .Additions .Deletions}}"
                         data-sort-author="{{.Author}}"
                         data-sort-ci="{{deref .CIStatus}}">
@@ -127,7 +127,7 @@
                         <td class="cell-author">{{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}{{.Author}}</td>
                         <td class="cell-ci">{{if .CIStatus}}<span class="ci-dot {{ciClass .CIStatus}}" title="{{ciLabel .CIStatus}}"></span>{{end}}</td>
                         <td class="cell-loc">{{loc .Additions .Deletions}}</td>
-                        <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                        <td class="cell-age">{{reltime .CreatedAt}}</td>
                         <td class="cell-actions">
                             <button class="btn-dismiss" onclick="dismissPR(this)">Dismiss</button>
                             <div class="overflow-menu">
@@ -209,7 +209,7 @@
                         {{if index $.AuthorTeams .Author}}data-teams="{{join (index $.AuthorTeams .Author) ","}}"{{end}}
                         data-sort-repo="{{shortRepo .Repo}}"
                         data-sort-number="{{.Number}}"
-                        data-sort-age="{{epoch .UpdatedAt}}"
+                        data-sort-age="{{epoch .CreatedAt}}"
                         data-sort-loc="{{add .Additions .Deletions}}"
                         data-sort-author="{{.Author}}"
                         data-sort-ci="{{deref .CIStatus}}">
@@ -219,7 +219,7 @@
                         <td class="cell-author">{{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}{{.Author}}</td>
                         <td class="cell-ci">{{if .CIStatus}}<span class="ci-dot {{ciClass .CIStatus}}" title="{{ciLabel .CIStatus}}"></span>{{end}}</td>
                         <td class="cell-loc">{{loc .Additions .Deletions}}</td>
-                        <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                        <td class="cell-age">{{reltime .CreatedAt}}</td>
                         <td class="cell-actions">
                             <button class="btn-dismiss" onclick="dismissPR(this)">Dismiss</button>
                             <div class="overflow-menu">

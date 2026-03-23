@@ -15,6 +15,7 @@ fragment prFields on Repository {
 			title
 			url
 			isDraft
+			createdAt
 			updatedAt
 			additions
 			deletions
@@ -72,6 +73,7 @@ type PullRequestNode struct {
 	Title          string  `json:"title"`
 	URL            string  `json:"url"`
 	IsDraft        bool    `json:"isDraft"`
+	CreatedAt      string  `json:"createdAt"`
 	UpdatedAt      string  `json:"updatedAt"`
 	Additions      int     `json:"additions"`
 	Deletions      int     `json:"deletions"`
