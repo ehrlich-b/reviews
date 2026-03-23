@@ -595,7 +595,7 @@ func (s *Server) runNag() {
 
 		// Build message
 		var lines []string
-		lines = append(lines, fmt.Sprintf("You have %d PRs waiting on you:", len(prList)))
+		lines = append(lines, fmt.Sprintf("You have %d PRs open for more than 7 days:", len(prList)))
 		for _, pr := range prList {
 			line := fmt.Sprintf("  - %s#%d: %s (%s)", shortRepo(pr.Repo), pr.Number, pr.Title, pr.URL)
 			if pr.CreatedAt != "" {
