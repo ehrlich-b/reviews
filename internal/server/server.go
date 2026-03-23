@@ -588,11 +588,18 @@ func (s *Server) runNag() {
 		// Check if already nagged today (per-author, not per-PR)
 		authorKey := "author:" + author
 		today := now.Format("2006-01-02")
-		lastNag, _ := s.store.GetLastNag(authorKey)
+		lastNag, nagErr := s.store.GetLastNag(authorKey)
+		log.Printf("nag: dedup check for %s: lastNag=%q err=%v today=%s", author, lastNag, nagErr, today)
 		if lastNag != "" {
 			nagTime, err := time.Parse(time.RFC3339, lastNag)
-			if err == nil && nagTime.In(loc).Format("2006-01-02") == today {
-				continue
+			if err != nil {
+				log.Printf("nag: failed to parse lastNag %q: %v", lastNag, err)
+			} else {
+				nagDate := nagTime.In(loc).Format("2006-01-02")
+				log.Printf("nag: comparing nagDate=%s vs today=%s", nagDate, today)
+				if nagDate == today {
+					continue
+				}
 			}
 		}
 
