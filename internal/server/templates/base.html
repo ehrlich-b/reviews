@@ -479,13 +479,13 @@
             {{range $g := .RepoGroups}}<span class="owner-label" data-owner="{{$g.Owner}}" onclick="toggleOwner(this)">{{$g.Owner}}</span>{{range $g.Repos}}<button class="repo-pill active" data-repo="{{.}}" data-owner="{{$g.Owner}}" onclick="toggleRepo(this)">{{.}}</button>{{end}}{{end}}
         </div>
         <div class="filter-sep"></div>
-        <select class="filter-select" id="f-ci" onchange="applyAllFilters()">
+        <select class="filter-select" id="f-ci" onchange="userChangedFilters=true;applyAllFilters()">
             <option value="all">CI: All</option>
             <option value="passing">CI: Pass</option>
             <option value="failing">CI: Fail</option>
         </select>
         <div class="filter-sep"></div>
-        <label class="filter-checkbox"><input type="checkbox" id="f-drafts" checked onchange="applyAllFilters()"> Drafts</label>
+        <label class="filter-checkbox"><input type="checkbox" id="f-drafts" checked onchange="userChangedFilters=true;applyAllFilters()"> Drafts</label>
     </div>
     {{template "content" .}}
     <div class="footer">
@@ -750,7 +750,7 @@
 
         function startBgPoll(){
             if(bgPollTimer) clearInterval(bgPollTimer);
-            bgPollTimer = setInterval(checkForNewSync, 30000);
+            bgPollTimer = setInterval(checkForNewSync, 5000); // TODO: restore to 30000
         }
 
         function stopBgPoll(){
@@ -794,6 +794,7 @@
         // Repo pill toggle
         window.toggleRepo = function(btn){
             btn.classList.toggle('active');
+            userChangedFilters = true;
             saveFilterState();
             applyAllFilters();
         };
@@ -878,10 +879,10 @@
             }
         }
 
-        var filterInitDone = false;
+        var userChangedFilters = false;
         // Master filter application
         window.applyAllFilters = function(){
-            if(filterInitDone) saveFilterState();
+            if(userChangedFilters) saveFilterState();
             var activeRepos = {};
             document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos[el.dataset.repo] = true; });
             var ciFilter = document.getElementById('f-ci').value;
@@ -954,6 +955,7 @@
                 if(allActive) p.classList.remove('active');
                 else p.classList.add('active');
             });
+            userChangedFilters = true;
             saveFilterState();
             applyAllFilters();
         };
@@ -961,6 +963,7 @@
         // Team pill toggle
         window.toggleTeamPill = function(btn){
             btn.classList.toggle('active');
+            userChangedFilters = true;
             saveFilterState();
             applyAllFilters();
         };
@@ -1102,7 +1105,6 @@
         applyActions();
         loadFilterState();
         applyAllFilters();
-        filterInitDone = true;
         initBgPoll();
     })();
     </script>
