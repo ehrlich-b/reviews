@@ -115,6 +115,21 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string, cfg Config) 
 	return s
 }
 
+func (s *Server) loadSlackCacheFromDB() {
+	raw, err := s.store.GetConfig("slack_users_cache")
+	if err != nil || raw == "" {
+		return
+	}
+	var users []slack.SlackUser
+	if err := json.Unmarshal([]byte(raw), &users); err != nil {
+		return
+	}
+	s.slackCacheMu.Lock()
+	s.slackCache = users
+	s.slackCacheMu.Unlock()
+	log.Printf("slack cache loaded from db: %d users", len(users))
+}
+
 func (s *Server) refreshSlackCache() {
 	users, err := s.slackClient.ListUsers()
 	if err != nil {
@@ -125,9 +140,15 @@ func (s *Server) refreshSlackCache() {
 	s.slackCache = users
 	s.slackCacheMu.Unlock()
 	log.Printf("slack cache: %d users", len(users))
+
+	// Persist to SQLite
+	if raw, err := json.Marshal(users); err == nil {
+		s.store.SetConfig("slack_users_cache", string(raw))
+	}
 }
 
 func (s *Server) slackCacheLoop() {
+	s.loadSlackCacheFromDB()
 	s.refreshSlackCache()
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
