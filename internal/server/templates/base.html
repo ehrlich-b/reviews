@@ -750,7 +750,7 @@
 
         function startBgPoll(){
             if(bgPollTimer) clearInterval(bgPollTimer);
-            bgPollTimer = setInterval(checkForNewSync, 5000); // TODO: restore to 30000
+            bgPollTimer = setInterval(checkForNewSync, 30000);
         }
 
         function stopBgPoll(){
