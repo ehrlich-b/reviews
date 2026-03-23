@@ -525,8 +525,7 @@ func (s *Server) nagLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	// Run once immediately
-	s.runNag()
+	// Don't run immediately on startup — avoids double-nag if restarted during the window
 	for range ticker.C {
 		s.runNag()
 	}
