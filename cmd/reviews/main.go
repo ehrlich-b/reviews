@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ehrlich-b/reviews/internal/db"
@@ -67,12 +68,20 @@ func serveCmd() {
 		log.Printf("slack client configured")
 	}
 
+	nagThresholdDays := 7
+	if v := os.Getenv("NAG_THRESHOLD_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			nagThresholdDays = n
+		}
+	}
+
 	cfg := server.Config{
-		AdminToken:  os.Getenv("ADMIN_TOKEN"),
-		SlackClient: slackClient,
-		NagEnabled:  os.Getenv("NAG_ENABLED") == "true",
-		NagDryRun:   os.Getenv("NAG_DRY_RUN") == "true",
-		JiraBaseURL: jiraBaseURL,
+		AdminToken:       os.Getenv("ADMIN_TOKEN"),
+		SlackClient:      slackClient,
+		NagEnabled:       os.Getenv("NAG_ENABLED") == "true",
+		NagDryRun:        os.Getenv("NAG_DRY_RUN") == "true",
+		NagThresholdDays: nagThresholdDays,
+		JiraBaseURL:      jiraBaseURL,
 	}
 
 	srv := server.New(store, syncer, parseOrgs(), cfg)

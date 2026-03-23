@@ -34,9 +34,10 @@ type Server struct {
 
 	adminToken  string
 	slackClient *slack.Client
-	nagEnabled  bool
-	nagDryRun   bool
-	jiraBaseURL string
+	nagEnabled       bool
+	nagDryRun        bool
+	nagThresholdDays int
+	jiraBaseURL      string
 
 	syncMu           gosync.Mutex
 	lastSyncComplete time.Time
@@ -48,11 +49,12 @@ type Server struct {
 }
 
 type Config struct {
-	AdminToken  string
-	SlackClient *slack.Client
-	NagEnabled  bool
-	NagDryRun   bool
-	JiraBaseURL string
+	AdminToken       string
+	SlackClient      *slack.Client
+	NagEnabled       bool
+	NagDryRun        bool
+	NagThresholdDays int
+	JiraBaseURL      string
 }
 
 func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string, cfg Config) *Server {
@@ -89,9 +91,10 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string, cfg Config) 
 		orgs:        orgs,
 		adminToken:  cfg.AdminToken,
 		slackClient: cfg.SlackClient,
-		nagEnabled:  cfg.NagEnabled,
-		nagDryRun:   cfg.NagDryRun,
-		jiraBaseURL: cfg.JiraBaseURL,
+		nagEnabled:       cfg.NagEnabled,
+		nagDryRun:        cfg.NagDryRun,
+		nagThresholdDays: cfg.NagThresholdDays,
+		jiraBaseURL:      cfg.JiraBaseURL,
 	}
 	s.routes()
 
@@ -552,12 +555,13 @@ func (s *Server) runNag() {
 		mappingByUser[m.GithubUsername] = m
 	}
 
-	// Group open PRs by author, skip PRs less than 7 days old
+	// Group open PRs by author, skip PRs younger than threshold
+	threshold := time.Duration(s.nagThresholdDays) * 24 * time.Hour
 	authorPRs := map[string][]*db.PullRequest{}
 	for _, pr := range prs {
 		if pr.CreatedAt != "" {
 			created, err := time.Parse(time.RFC3339, pr.CreatedAt)
-			if err == nil && time.Since(created) < 7*24*time.Hour {
+			if err == nil && time.Since(created) < threshold {
 				continue
 			}
 		}
@@ -595,13 +599,13 @@ func (s *Server) runNag() {
 
 		// Build message
 		var lines []string
-		lines = append(lines, fmt.Sprintf("You have %d PRs open for more than 7 days:", len(prList)))
+		lines = append(lines, fmt.Sprintf("You have %d PRs open for more than %d days:", len(prList), s.nagThresholdDays))
 		for _, pr := range prList {
 			line := fmt.Sprintf("  - %s#%d: %s (%s)", shortRepo(pr.Repo), pr.Number, pr.Title, pr.URL)
 			if pr.CreatedAt != "" {
 				if created, err := time.Parse(time.RFC3339, pr.CreatedAt); err == nil {
 					days := int(time.Since(created).Hours() / 24)
-					if days >= 14 {
+					if days >= s.nagThresholdDays*2 {
 						line += fmt.Sprintf(" (open for %d days)", days)
 					}
 				}
