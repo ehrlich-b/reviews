@@ -120,11 +120,6 @@ func (s *Syncer) Run(verbose bool, orgs []string) (*Summary, error) {
 		}
 	}
 
-	// Prune nag log for PRs no longer in DB
-	if err := s.store.PruneNagLog(); err != nil {
-		log.Printf("prune nag log: %v", err)
-	}
-
 	// Jira enrichment (best-effort)
 	if s.jira != nil {
 		s.syncJira(now)

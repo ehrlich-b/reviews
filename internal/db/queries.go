@@ -295,7 +295,7 @@ func (s *Store) SetLastNag(prKey, naggedAt string) error {
 }
 
 func (s *Store) PruneNagLog() error {
-	_, err := s.db.Exec(`DELETE FROM nag_log WHERE pr_key NOT IN
+	_, err := s.db.Exec(`DELETE FROM nag_log WHERE pr_key NOT LIKE 'author:%' AND pr_key NOT IN
 		(SELECT repo || '#' || number FROM pull_requests)`)
 	if err != nil {
 		return fmt.Errorf("prune nag log: %w", err)

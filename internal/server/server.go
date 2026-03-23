@@ -525,7 +525,7 @@ func (s *Server) nagLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	// Don't run immediately on startup — avoids double-nag if restarted during the window
+	s.runNag()
 	for range ticker.C {
 		s.runNag()
 	}
@@ -558,11 +558,12 @@ func (s *Server) runNag() {
 	threshold := time.Duration(s.nagThresholdDays) * 24 * time.Hour
 	authorPRs := map[string][]*db.PullRequest{}
 	for _, pr := range prs {
-		if pr.CreatedAt != "" {
-			created, err := time.Parse(time.RFC3339, pr.CreatedAt)
-			if err == nil && time.Since(created) < threshold {
-				continue
-			}
+		if pr.CreatedAt == "" {
+			continue // skip PRs without created_at (not yet synced with new schema)
+		}
+		created, err := time.Parse(time.RFC3339, pr.CreatedAt)
+		if err != nil || time.Since(created) < threshold {
+			continue
 		}
 		authorPRs[pr.Author] = append(authorPRs[pr.Author], pr)
 	}
@@ -588,18 +589,11 @@ func (s *Server) runNag() {
 		// Check if already nagged today (per-author, not per-PR)
 		authorKey := "author:" + author
 		today := now.Format("2006-01-02")
-		lastNag, nagErr := s.store.GetLastNag(authorKey)
-		log.Printf("nag: dedup check for %s: lastNag=%q err=%v today=%s", author, lastNag, nagErr, today)
+		lastNag, _ := s.store.GetLastNag(authorKey)
 		if lastNag != "" {
 			nagTime, err := time.Parse(time.RFC3339, lastNag)
-			if err != nil {
-				log.Printf("nag: failed to parse lastNag %q: %v", lastNag, err)
-			} else {
-				nagDate := nagTime.In(loc).Format("2006-01-02")
-				log.Printf("nag: comparing nagDate=%s vs today=%s", nagDate, today)
-				if nagDate == today {
-					continue
-				}
+			if err == nil && nagTime.In(loc).Format("2006-01-02") == today {
+				continue
 			}
 		}
 
