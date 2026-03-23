@@ -520,28 +520,23 @@
         };
         setTheme(getTheme());
 
-        // Viewer management
-        var VIEWER_KEY = 'reviews-viewer';
-        function getViewer(){ return LS.getItem(VIEWER_KEY)||''; }
+        // Viewer management (cookie-based)
+        function getViewer(){
+            var m = document.cookie.match(/(?:^|; )reviews_viewer=([^;]*)/);
+            return m ? decodeURIComponent(m[1]) : '';
+        }
+        function setViewerCookie(name){
+            document.cookie = 'reviews_viewer=' + encodeURIComponent(name) + ';path=/;max-age=' + (365*86400) + ';SameSite=Lax';
+        }
 
         function initViewer(){
-            var viewer = getViewer();
             var params = new URLSearchParams(location.search);
+            var hasFilters = params.has('repos') || params.has('ci') || params.has('drafts') || params.has('teams');
+            var viewer = hasFilters ? '' : getViewer();
             if(viewer){
-                if(params.get('viewer') !== viewer){
-                    params.set('viewer', viewer);
-                    location.replace(location.pathname + '?' + params.toString());
-                    return false;
-                }
                 document.getElementById('viewer-label').textContent = 'viewing as ' + viewer;
                 document.getElementById('viewer-info').style.display = '';
             } else {
-                if(params.has('viewer')){
-                    params.delete('viewer');
-                    var u = params.toString() ? location.pathname + '?' + params.toString() : location.pathname;
-                    location.replace(u);
-                    return false;
-                }
                 document.getElementById('viewer-input').style.display = '';
             }
             return true;
@@ -550,10 +545,8 @@
         window.setViewer = function(){
             var name = document.getElementById('viewer-name').value.trim();
             if(!name) return;
-            LS.setItem(VIEWER_KEY, name);
-            var params = new URLSearchParams(location.search);
-            params.set('viewer', name);
-            location.replace(location.pathname + '?' + params.toString());
+            setViewerCookie(name);
+            location.reload();
         };
 
         window.editViewer = function(){
@@ -801,43 +794,76 @@
             applyAllFilters();
         };
 
-        // Filter state persistence
+        // Filter state persistence (URL params, localStorage fallback)
         var FILTER_KEY = 'reviews-filters';
         function saveFilterState(){
             var activeRepos = [];
             document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos.push(el.dataset.repo); });
             var activeTeams = [];
             document.querySelectorAll('.team-pill.active').forEach(function(el){ activeTeams.push(el.dataset.teamName); });
-            var f = {
-                repos: activeRepos,
-                ci: document.getElementById('f-ci').value,
-                drafts: document.getElementById('f-drafts').checked,
-                teams: activeTeams
-            };
-            LS.setItem(FILTER_KEY, JSON.stringify(f));
+            var ci = document.getElementById('f-ci').value;
+            var drafts = document.getElementById('f-drafts').checked;
+
+            // Save to localStorage as fallback
+            LS.setItem(FILTER_KEY, JSON.stringify({repos:activeRepos, ci:ci, drafts:drafts, teams:activeTeams}));
+
+            // Update URL params
+            var params = new URLSearchParams();
+            var allRepos = [];
+            document.querySelectorAll('.repo-pill').forEach(function(el){ allRepos.push(el.dataset.repo); });
+            // Only set repos param if not all are active
+            if(activeRepos.length < allRepos.length && activeRepos.length > 0){
+                params.set('repos', activeRepos.join(','));
+            }
+            if(ci && ci !== 'all') params.set('ci', ci);
+            if(drafts) params.set('drafts', '1');
+            if(activeTeams.length > 0) params.set('teams', activeTeams.join(','));
+            var qs = params.toString();
+            var url = qs ? location.pathname + '?' + qs : location.pathname;
+            history.replaceState(null, '', url);
         }
         function loadFilterState(){
-            try{
-                var f = JSON.parse(LS.getItem(FILTER_KEY)||'{}');
-                if(f.repos){
+            var params = new URLSearchParams(location.search);
+            var fromURL = params.has('repos') || params.has('ci') || params.has('drafts') || params.has('teams');
+
+            if(fromURL){
+                // Load from URL
+                if(params.has('repos')){
+                    var repos = params.get('repos').split(',');
                     document.querySelectorAll('.repo-pill').forEach(function(el){
-                        if(f.repos.indexOf(el.dataset.repo) >= 0) el.classList.add('active');
+                        if(repos.indexOf(el.dataset.repo) >= 0) el.classList.add('active');
                         else el.classList.remove('active');
                     });
                 }
-                if(f.ci) document.getElementById('f-ci').value = f.ci;
-                if(f.drafts !== undefined) document.getElementById('f-drafts').checked = f.drafts;
-                if(f.teams && f.teams.length > 0){
+                if(params.has('ci')) document.getElementById('f-ci').value = params.get('ci');
+                if(params.has('drafts')) document.getElementById('f-drafts').checked = params.get('drafts') === '1';
+                if(params.has('teams')){
+                    var teams = params.get('teams').split(',');
                     document.querySelectorAll('.team-pill').forEach(function(el){
-                        if(f.teams.indexOf(el.dataset.teamName) >= 0) el.classList.add('active');
+                        if(teams.indexOf(el.dataset.teamName) >= 0) el.classList.add('active');
                         else el.classList.remove('active');
                     });
                 }
-                // Migrate old teamOnly to new format
-                if(f.teamOnly && !f.teams){
-                    document.querySelectorAll('.team-pill').forEach(function(el){ el.classList.add('active'); });
-                }
-            }catch(e){}
+            } else {
+                // Fall back to localStorage
+                try{
+                    var f = JSON.parse(LS.getItem(FILTER_KEY)||'{}');
+                    if(f.repos){
+                        document.querySelectorAll('.repo-pill').forEach(function(el){
+                            if(f.repos.indexOf(el.dataset.repo) >= 0) el.classList.add('active');
+                            else el.classList.remove('active');
+                        });
+                    }
+                    if(f.ci) document.getElementById('f-ci').value = f.ci;
+                    if(f.drafts !== undefined) document.getElementById('f-drafts').checked = f.drafts;
+                    if(f.teams && f.teams.length > 0){
+                        document.querySelectorAll('.team-pill').forEach(function(el){
+                            if(f.teams.indexOf(el.dataset.teamName) >= 0) el.classList.add('active');
+                            else el.classList.remove('active');
+                        });
+                    }
+                }catch(e){}
+            }
         }
 
         // Master filter application
