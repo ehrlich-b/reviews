@@ -682,13 +682,8 @@ type dashboardData struct {
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	viewer := ""
-	// Don't apply viewer when URL has filter params (shared view)
-	q := r.URL.Query()
-	hasFilters := q.Has("repos") || q.Has("ci") || q.Has("drafts") || q.Has("teams")
-	if !hasFilters {
-		if c, err := r.Cookie("reviews_viewer"); err == nil {
-			viewer = c.Value
-		}
+	if c, err := r.Cookie("reviews_viewer"); err == nil {
+		viewer = c.Value
 	}
 
 	prs, err := s.store.ListPRs()

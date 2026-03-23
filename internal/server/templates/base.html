@@ -332,12 +332,22 @@
             cursor: pointer;
             font-weight: 500;
         }
-        .btn-reviewed {
-            border-color: var(--green-muted);
-            color: #fff;
-            background: var(--green-muted);
+        .cell-actions { text-align: right; white-space: nowrap; }
+        .btn-trash {
+            padding: 3px 6px; border-radius: 4px;
+            border: 1px solid var(--border); background: transparent;
+            color: var(--text-dim); cursor: pointer; line-height: 1;
+            vertical-align: middle;
         }
-        .btn-reviewed:hover { background: var(--green); }
+        .btn-trash svg { display: block; }
+        .btn-trash:hover { color: var(--text-muted); border-color: var(--text-muted); }
+        .btn-trash-confirm {
+            font-size: 16px; padding: 1px 7px; border-radius: 4px;
+            border: 1px solid var(--red-muted); background: transparent;
+            color: var(--red); cursor: pointer; line-height: 1; font-weight: 700;
+            vertical-align: middle;
+        }
+        .btn-trash-confirm:hover { background: rgba(248,81,73,0.15); }
         .btn-dismiss {
             border-color: var(--green-muted);
             color: var(--green);
@@ -346,27 +356,6 @@
             margin-right: 4px;
         }
         .btn-dismiss:hover { background: var(--green); color: #fff; }
-
-        /* Overflow menu */
-        .overflow-menu { position: relative; display: inline-block; }
-        .btn-overflow {
-            font-size: 14px; padding: 2px 8px; border-radius: 4px;
-            border: 1px solid var(--border); background: var(--bg-card);
-            color: var(--text-muted); cursor: pointer; line-height: 1;
-        }
-        .btn-overflow:hover { color: var(--text); border-color: var(--text-dim); }
-        .overflow-dropdown {
-            display: none; position: absolute; right: 0; top: 100%; margin-top: 2px;
-            background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 20; min-width: 100px; padding: 4px 0;
-        }
-        .overflow-dropdown.open { display: block; }
-        .overflow-item {
-            display: block; width: 100%; padding: 4px 12px; font-size: 12px;
-            border: none; background: none; color: var(--text-secondary); cursor: pointer;
-            text-align: left; white-space: nowrap;
-        }
-        .overflow-item:hover { background: var(--bg-hover); color: var(--text); }
 
         /* Jira ticket styling */
         .ticket-summary { color: var(--text-secondary); font-size: 11px; margin-left: 6px; }
@@ -530,9 +519,7 @@
         }
 
         function initViewer(){
-            var params = new URLSearchParams(location.search);
-            var hasFilters = params.has('repos') || params.has('ci') || params.has('drafts') || params.has('teams');
-            var viewer = hasFilters ? '' : getViewer();
+            var viewer = getViewer();
             if(viewer){
                 document.getElementById('viewer-label').textContent = 'viewing as ' + viewer;
                 document.getElementById('viewer-info').style.display = '';
@@ -562,6 +549,18 @@
             try{ return JSON.parse(LS.getItem(ACTIONS_KEY)||'{}'); }catch(e){ return {}; }
         }
         function saveActions(a){ LS.setItem(ACTIONS_KEY, JSON.stringify(a)); }
+
+        window.trashPR = function(btn){
+            // Reset any other open confirms
+            document.querySelectorAll('.btn-trash-confirm').forEach(function(c){
+                c.style.display = 'none';
+                var t = c.closest('.pr-row').querySelector('.btn-trash');
+                if(t) t.style.display = '';
+            });
+            btn.style.display = 'none';
+            var confirm = btn.closest('.pr-row').querySelector('.btn-trash-confirm');
+            if(confirm) confirm.style.display = '';
+        };
 
         window.markReviewed = function(btn){
             var row = btn.closest('.pr-row');
@@ -617,28 +616,30 @@
             document.querySelectorAll('.pr-row[data-pr-key]').forEach(function(row){
                 var key = row.dataset.prKey;
                 var act = actions[key];
+                var trash = row.querySelector('.btn-trash');
+                var trashConfirm = row.querySelector('.btn-trash-confirm');
                 var dismiss = row.querySelector('.btn-dismiss');
-                var overflowMenu = row.querySelector('.overflow-menu');
                 var undo = row.querySelector('.btn-undo');
-                if(!dismiss || !undo) return;
+                if(!undo) return;
 
                 // Reset
                 row.classList.remove('action-reviewed','action-dismissed');
 
                 if(!act){
-                    dismiss.style.display = '';
-                    if(overflowMenu) overflowMenu.style.display = '';
+                    if(trash) trash.style.display = '';
+                    if(trashConfirm) trashConfirm.style.display = 'none';
+                    if(dismiss) dismiss.style.display = '';
                     undo.style.display = 'none';
                     return;
                 }
 
                 if(act.action === 'reviewed'){
-                    // Auto-clear if commit changed
                     if(act.commit && row.dataset.commit && act.commit !== row.dataset.commit){
                         delete actions[key];
                         saveActions(actions);
-                        dismiss.style.display = '';
-                        if(overflowMenu) overflowMenu.style.display = '';
+                        if(trash) trash.style.display = '';
+                        if(trashConfirm) trashConfirm.style.display = 'none';
+                        if(dismiss) dismiss.style.display = '';
                         undo.style.display = 'none';
                         return;
                     }
@@ -649,8 +650,9 @@
                     undo.textContent = 'Undismiss';
                 }
 
-                dismiss.style.display = 'none';
-                if(overflowMenu) overflowMenu.style.display = 'none';
+                if(trash) trash.style.display = 'none';
+                if(trashConfirm) trashConfirm.style.display = 'none';
+                if(dismiss) dismiss.style.display = 'none';
                 undo.style.display = '';
             });
 
@@ -676,9 +678,11 @@
                         undoBtn.style.display = '';
                         undoBtn.onclick = function(){ undoAction(undoBtn); };
                     }
-                    var om = clone.querySelector('.overflow-menu');
+                    var ct = clone.querySelector('.btn-trash');
+                    var ctc = clone.querySelector('.btn-trash-confirm');
                     var db = clone.querySelector('.btn-dismiss');
-                    if(om) om.style.display = 'none';
+                    if(ct) ct.style.display = 'none';
+                    if(ctc) ctc.style.display = 'none';
                     if(db) db.style.display = 'none';
                     if(act.action === 'reviewed'){
                         if(undoBtn) undoBtn.textContent = 'Undo Reviewed';
@@ -808,16 +812,24 @@
             LS.setItem(FILTER_KEY, JSON.stringify({repos:activeRepos, ci:ci, drafts:drafts, teams:activeTeams}));
 
             // Update URL params
-            var params = new URLSearchParams();
-            var allRepos = [];
-            document.querySelectorAll('.repo-pill').forEach(function(el){ allRepos.push(el.dataset.repo); });
-            // Only set repos param if not all are active
-            if(activeRepos.length < allRepos.length && activeRepos.length > 0){
-                params.set('repos', activeRepos.join(','));
+            var params = new URLSearchParams(location.search);
+            // Always set repos
+            if(activeRepos.length > 0){
+                var allRepos = [];
+                document.querySelectorAll('.repo-pill').forEach(function(el){ allRepos.push(el.dataset.repo); });
+                if(activeRepos.length < allRepos.length) params.set('repos', activeRepos.join(','));
+                else params.delete('repos');
             }
+            // CI
             if(ci && ci !== 'all') params.set('ci', ci);
-            if(drafts) params.set('drafts', '1');
+            else params.delete('ci');
+            // Drafts
+            if(!drafts) params.set('drafts', '0');
+            else params.delete('drafts');
+            // Teams
             if(activeTeams.length > 0) params.set('teams', activeTeams.join(','));
+            else params.delete('teams');
+
             var qs = params.toString();
             var url = qs ? location.pathname + '?' + qs : location.pathname;
             history.replaceState(null, '', url);
@@ -836,7 +848,7 @@
                     });
                 }
                 if(params.has('ci')) document.getElementById('f-ci').value = params.get('ci');
-                if(params.has('drafts')) document.getElementById('f-drafts').checked = params.get('drafts') === '1';
+                if(params.has('drafts')) document.getElementById('f-drafts').checked = params.get('drafts') !== '0';
                 if(params.has('teams')){
                     var teams = params.get('teams').split(',');
                     document.querySelectorAll('.team-pill').forEach(function(el){
@@ -866,9 +878,10 @@
             }
         }
 
+        var filterInitDone = false;
         // Master filter application
         window.applyAllFilters = function(){
-            saveFilterState();
+            if(filterInitDone) saveFilterState();
             var activeRepos = {};
             document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos[el.dataset.repo] = true; });
             var ciFilter = document.getElementById('f-ci').value;
@@ -952,19 +965,6 @@
             applyAllFilters();
         };
 
-        // Overflow menu
-        window.toggleOverflow = function(btn){
-            var dropdown = btn.parentElement.querySelector('.overflow-dropdown');
-            var wasOpen = dropdown.classList.contains('open');
-            closeAllOverflows();
-            if(!wasOpen) dropdown.classList.add('open');
-        };
-        function closeAllOverflows(){
-            document.querySelectorAll('.overflow-dropdown.open').forEach(function(d){ d.classList.remove('open'); });
-        }
-        document.addEventListener('click', function(e){
-            if(!e.target.closest('.overflow-menu')) closeAllOverflows();
-        });
 
         // Column sorting
         var sortState = {};
@@ -1102,6 +1102,7 @@
         applyActions();
         loadFilterState();
         applyAllFilters();
+        filterInitDone = true;
         initBgPoll();
     })();
     </script>
