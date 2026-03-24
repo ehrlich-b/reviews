@@ -559,7 +559,7 @@ func (s *Server) runNag() {
 	authorPRs := map[string][]*db.PullRequest{}
 	for _, pr := range prs {
 		if pr.CreatedAt == "" {
-			continue // skip PRs without created_at (not yet synced with new schema)
+			continue
 		}
 		created, err := time.Parse(time.RFC3339, pr.CreatedAt)
 		if err != nil || time.Since(created) < threshold {
@@ -582,6 +582,9 @@ func (s *Server) runNag() {
 			continue
 		}
 		now := time.Now().In(loc)
+		if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
+			continue
+		}
 		if now.Hour() < 13 || now.Hour() > 16 {
 			continue
 		}
@@ -597,10 +600,28 @@ func (s *Server) runNag() {
 			}
 		}
 
+		// Filter BLOCKED PRs: only include if last nag was 7+ days ago
+		var nagAge time.Duration
+		if lastNag != "" {
+			if t, err := time.Parse(time.RFC3339, lastNag); err == nil {
+				nagAge = time.Since(t)
+			}
+		}
+		var filtered []*db.PullRequest
+		for _, pr := range prList {
+			if strings.HasPrefix(pr.Title, "BLOCKED") && nagAge > 0 && nagAge < 7*24*time.Hour {
+				continue
+			}
+			filtered = append(filtered, pr)
+		}
+		if len(filtered) == 0 {
+			continue
+		}
+
 		// Build message
 		var lines []string
-		lines = append(lines, fmt.Sprintf("You have %d PRs open for more than %d days:", len(prList), s.nagThresholdDays))
-		for _, pr := range prList {
+		lines = append(lines, fmt.Sprintf("You have %d PRs open for more than %d days:", len(filtered), s.nagThresholdDays))
+		for _, pr := range filtered {
 			line := fmt.Sprintf("  - %s#%d: %s (%s)", shortRepo(pr.Repo), pr.Number, pr.Title, pr.URL)
 			if pr.CreatedAt != "" {
 				if created, err := time.Parse(time.RFC3339, pr.CreatedAt); err == nil {
