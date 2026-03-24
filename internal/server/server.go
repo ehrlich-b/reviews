@@ -646,7 +646,7 @@ func (s *Server) runNag() {
 				log.Printf("nag: send DM to %s failed (will retry tomorrow): %v", author, err)
 				continue
 			}
-			log.Printf("nag: sent DM to %s (%d PRs)", author, len(prList))
+			log.Printf("nag: sent DM to %s (%d PRs)", author, len(filtered))
 		}
 		nagCount++
 	}
