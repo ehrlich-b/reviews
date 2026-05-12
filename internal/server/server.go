@@ -558,7 +558,7 @@ func (s *Server) runNag() {
 	threshold := time.Duration(s.nagThresholdDays) * 24 * time.Hour
 	authorPRs := map[string][]*db.PullRequest{}
 	for _, pr := range prs {
-		if pr.CreatedAt == "" {
+		if pr.Draft || pr.CreatedAt == "" {
 			continue
 		}
 		created, err := time.Parse(time.RFC3339, pr.CreatedAt)
