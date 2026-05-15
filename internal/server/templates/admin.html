@@ -144,6 +144,10 @@
 
         <section class="section">
             <h2 class="section-header">Slack Mappings</h2>
+            <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
+                <input type="text" id="new-gh-user" placeholder="Add GitHub username..." style="width:240px">
+                <button class="btn btn-primary" onclick="addGithubUser()">Add Row</button>
+            </div>
             <table>
                 <thead>
                     <tr><th>GitHub User</th><th>Slack User</th><th>Timezone</th><th></th></tr>
@@ -176,6 +180,24 @@
             (results[2] || []).forEach(function(m){ existingMappings[m.GithubUsername] = m; });
             renderMappingsTable(allGithubUsers);
         });
+
+        window.addGithubUser = function(){
+            var input = document.getElementById('new-gh-user');
+            var name = input.value.trim();
+            if(!name) return;
+            if(allGithubUsers.indexOf(name) === -1){
+                allGithubUsers.push(name);
+                allGithubUsers.sort();
+            }
+            input.value = '';
+            renderMappingsTable(allGithubUsers);
+            var row = document.getElementById('row-'+name);
+            if(row){
+                row.scrollIntoView({block:'center'});
+                var slackInput = row.querySelector('input[data-gh]');
+                if(slackInput) slackInput.focus();
+            }
+        };
 
         var TIMEZONES = [
             {v:'America/New_York', l:'Eastern'},

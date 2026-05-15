@@ -26,6 +26,7 @@ type PullRequest struct {
 	LastCommitAt         *string
 	LastReviewActivityAt *string
 	Approvers            *string
+	EngagedUsers         *string
 	Additions            int
 	Deletions            int
 	SyncedAt             string
@@ -35,8 +36,8 @@ func (s *Store) UpsertPR(pr *PullRequest) error {
 	_, err := s.db.Exec(`INSERT INTO pull_requests
 		(repo, number, title, author, author_avatar, url, draft, comment_count, created_at, updated_at,
 		 ticket_key, ci_status, review_status, triage_bucket, triage_reason,
-		 last_commit_at, last_review_activity_at, approvers, additions, deletions, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 last_commit_at, last_review_activity_at, approvers, engaged_users, additions, deletions, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo, number) DO UPDATE SET
 			title=excluded.title, author=excluded.author, author_avatar=excluded.author_avatar,
 			url=excluded.url, draft=excluded.draft, comment_count=excluded.comment_count,
@@ -44,12 +45,14 @@ func (s *Store) UpsertPR(pr *PullRequest) error {
 			ci_status=excluded.ci_status, review_status=excluded.review_status,
 			triage_bucket=excluded.triage_bucket, triage_reason=excluded.triage_reason,
 			last_commit_at=excluded.last_commit_at, last_review_activity_at=excluded.last_review_activity_at,
-			approvers=excluded.approvers, additions=excluded.additions, deletions=excluded.deletions,
+			approvers=excluded.approvers, engaged_users=excluded.engaged_users,
+			additions=excluded.additions, deletions=excluded.deletions,
 			synced_at=excluded.synced_at`,
 		pr.Repo, pr.Number, pr.Title, pr.Author, pr.AuthorAvatar, pr.URL,
 		pr.Draft, pr.CommentCount, pr.CreatedAt, pr.UpdatedAt,
 		pr.TicketKey, pr.CIStatus, pr.ReviewStatus, pr.TriageBucket, pr.TriageReason,
-		pr.LastCommitAt, pr.LastReviewActivityAt, pr.Approvers, pr.Additions, pr.Deletions, pr.SyncedAt)
+		pr.LastCommitAt, pr.LastReviewActivityAt, pr.Approvers, pr.EngagedUsers,
+		pr.Additions, pr.Deletions, pr.SyncedAt)
 	if err != nil {
 		return fmt.Errorf("upsert PR: %w", err)
 	}
@@ -136,7 +139,8 @@ func (s *Store) GetConfig(key string) (string, error) {
 func (s *Store) ListPRs() ([]*PullRequest, error) {
 	rows, err := s.db.Query(`SELECT id, repo, number, title, author, author_avatar, url, draft,
 		comment_count, created_at, updated_at, ticket_key, ci_status, review_status, triage_bucket,
-		triage_reason, last_commit_at, last_review_activity_at, approvers, additions, deletions, synced_at
+		triage_reason, last_commit_at, last_review_activity_at, approvers, engaged_users,
+		additions, deletions, synced_at
 		FROM pull_requests ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list PRs: %w", err)
@@ -150,7 +154,7 @@ func (s *Store) ListPRs() ([]*PullRequest, error) {
 			&pr.AuthorAvatar, &pr.URL, &pr.Draft, &pr.CommentCount, &pr.CreatedAt, &pr.UpdatedAt,
 			&pr.TicketKey, &pr.CIStatus, &pr.ReviewStatus, &pr.TriageBucket,
 			&pr.TriageReason, &pr.LastCommitAt, &pr.LastReviewActivityAt,
-			&pr.Approvers, &pr.Additions, &pr.Deletions, &pr.SyncedAt)
+			&pr.Approvers, &pr.EngagedUsers, &pr.Additions, &pr.Deletions, &pr.SyncedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan PR: %w", err)
 		}
@@ -351,6 +355,34 @@ func (s *Store) GetJiraIssues(keys []string) (map[string]*JiraIssue, error) {
 		result[j.Key] = &j
 	}
 	return result, rows.Err()
+}
+
+func (s *Store) AddKnownAuthor(username string) error {
+	if username == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO known_authors (username) VALUES (?)`, username)
+	if err != nil {
+		return fmt.Errorf("add known author: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListKnownAuthors() ([]string, error) {
+	rows, err := s.db.Query("SELECT username FROM known_authors ORDER BY username")
+	if err != nil {
+		return nil, fmt.Errorf("list known authors: %w", err)
+	}
+	defer rows.Close()
+	var authors []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, fmt.Errorf("scan known author: %w", err)
+		}
+		authors = append(authors, a)
+	}
+	return authors, rows.Err()
 }
 
 func (s *Store) ListPRAuthors() ([]string, error) {

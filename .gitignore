@@ -1,2 +1,5 @@
 /reviews
+/reviews-linux-amd64
+/reviews.db
 /.env
+/tmp/

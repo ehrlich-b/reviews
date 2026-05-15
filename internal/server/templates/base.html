@@ -214,6 +214,23 @@
             border-bottom: 1px solid var(--border);
         }
         .section-header .count { font-weight: 400; color: var(--text-dim); }
+        summary.section-collapsible {
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+        }
+        summary.section-collapsible::-webkit-details-marker { display: none; }
+        summary.section-collapsible::before {
+            content: "\25B8";
+            display: inline-block;
+            margin-right: 6px;
+            color: var(--text-dim);
+            transition: transform 0.15s;
+        }
+        details[open] > summary.section-collapsible::before {
+            transform: rotate(90deg);
+        }
+        details > summary.section-collapsible + * { margin-top: 6px; }
 
         /* Table */
         .pr-table {
@@ -485,7 +502,7 @@
             <option value="failing">CI: Fail</option>
         </select>
         <div class="filter-sep"></div>
-        <label class="filter-checkbox"><input type="checkbox" id="f-drafts" checked onchange="userChangedFilters=true;applyAllFilters()"> Drafts</label>
+        <label class="filter-checkbox"><input type="checkbox" id="f-drafts" onchange="userChangedFilters=true;applyAllFilters()"> Drafts</label>
     </div>
     {{template "content" .}}
     <div class="footer">
@@ -886,7 +903,7 @@
             var activeRepos = {};
             document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos[el.dataset.repo] = true; });
             var ciFilter = document.getElementById('f-ci').value;
-            var hideDrafts = document.getElementById('f-drafts').checked;
+            var showDrafts = document.getElementById('f-drafts').checked;
 
             // Team pill filter: union of active team pills
             var activeTeamPills = document.querySelectorAll('.team-pill.active');
@@ -904,7 +921,7 @@
                 if(!activeRepos[el.dataset.repo]) hide = true;
                 if(ciFilter === 'passing' && el.dataset.ci && el.dataset.ci !== 'success') hide = true;
                 if(ciFilter === 'failing' && el.dataset.ci !== 'failure' && el.dataset.ci !== 'error') hide = true;
-                if(hideDrafts && el.dataset.draft === 'true') hide = true;
+                if(!showDrafts && el.dataset.draft === 'true') hide = true;
                 if(teamFiltering){
                     var rowTeams = (el.dataset.teams || '').split(',').filter(Boolean);
                     var inTeam = false;
@@ -939,7 +956,7 @@
                 if(!activeRepos[el.dataset.repo]) hide = true;
                 if(ciFilter === 'passing' && el.dataset.ci && el.dataset.ci !== 'success') hide = true;
                 if(ciFilter === 'failing' && el.dataset.ci !== 'failure' && el.dataset.ci !== 'error') hide = true;
-                if(hideDrafts && el.dataset.draft === 'true') hide = true;
+                if(!showDrafts && el.dataset.draft === 'true') hide = true;
                 if(hide) el.classList.add('filter-hidden');
                 else el.classList.remove('filter-hidden');
             });

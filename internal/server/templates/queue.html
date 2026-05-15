@@ -1,3 +1,48 @@
+{{define "othersTable"}}
+<table class="pr-table">
+    <colgroup>
+        <col style="width:6%">
+        <col style="width:4.5%">
+        <col>
+        <col style="width:11%">
+        <col style="width:2%">
+        <col style="width:6.5%">
+        <col style="width:5.5%">
+    </colgroup>
+    <thead>
+        <tr>
+            <th>Repo</th>
+            <th>#</th>
+            <th>Title</th>
+            <th>Author</th>
+            <th>CI</th>
+            <th>+/-</th>
+            <th>Age</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .PRs}}
+    <tr class="pr-row"
+        data-pr-key="{{.Repo}}#{{.Number}}"
+        data-commit="{{deref .LastCommitAt}}"
+        data-ci="{{deref .CIStatus}}"
+        data-repo="{{shortRepo .Repo}}"
+        data-draft="{{.Draft}}"
+        data-ticket="{{deref .TicketKey}}"
+        {{if index $.AuthorTeams .Author}}data-teams="{{join (index $.AuthorTeams .Author) ","}}"{{end}}>
+        <td class="cell-repo">{{shortRepo .Repo}}</td>
+        <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+        <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+        <td class="cell-author">{{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}{{.Author}}</td>
+        <td class="cell-ci">{{if .CIStatus}}<span class="ci-dot {{ciClass .CIStatus}}" title="{{ciLabel .CIStatus}}"></span>{{end}}</td>
+        <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+        <td class="cell-age">{{reltime .CreatedAt}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+</table>
+{{end}}
+
 {{define "content"}}
 <main>
     {{if gt .YourPRsCount 0}}
@@ -51,6 +96,62 @@
                 <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
                 <td class="cell-loc">{{loc .Additions .Deletions}}</td>
                 <td class="cell-age">{{reltime .CreatedAt}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </section>
+    {{end}}
+
+    {{if .Engaged}}
+    <section class="section" data-section="engaged">
+        <h2 class="section-header">Engaged <span class="count">({{len .Engaged}})</span></h2>
+        <table class="pr-table">
+            <colgroup>
+                <col style="width:6%">
+                <col style="width:4.5%">
+                <col>
+                <col style="width:11%">
+                <col style="width:2%">
+                <col style="width:6.5%">
+                <col style="width:5.5%">
+                <col style="width:13%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Repo</th>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Author</th>
+                    <th>CI</th>
+                    <th>+/-</th>
+                    <th>Age</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .Engaged}}
+            <tr class="pr-row"
+                data-pr-key="{{.Repo}}#{{.Number}}"
+                data-commit="{{deref .LastCommitAt}}"
+                data-ci="{{deref .CIStatus}}"
+                data-repo="{{shortRepo .Repo}}"
+                data-draft="{{.Draft}}"
+                data-ticket="{{deref .TicketKey}}"
+                {{if index $.AuthorTeams .Author}}data-teams="{{join (index $.AuthorTeams .Author) ","}}"{{end}}>
+                <td class="cell-repo">{{shortRepo .Repo}}</td>
+                <td class="cell-number"><a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a></td>
+                <td class="cell-title"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></td>
+                <td class="cell-author">{{if .AuthorAvatar}}<img src="{{deref .AuthorAvatar}}" class="avatar" loading="lazy" alt="">{{end}}{{.Author}}</td>
+                <td class="cell-ci">{{if .CIStatus}}<span class="ci-dot {{ciClass .CIStatus}}" title="{{ciLabel .CIStatus}}"></span>{{end}}</td>
+                <td class="cell-loc">{{loc .Additions .Deletions}}</td>
+                <td class="cell-age">{{reltime .UpdatedAt}}</td>
+                <td class="cell-actions">
+                    <button class="btn-dismiss" onclick="dismissPR(this)">Dismiss</button>
+                    <button class="btn-undo" onclick="undoAction(this)" style="display:none">Undo</button>
+                    <button class="btn-trash" onclick="trashPR(this)" title="Mark reviewed"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1.5v1h3.5a.5.5 0 010 1h-.538l-.853 10.66A2 2 0 0111.115 16h-6.23a2 2 0 01-1.994-1.84L2.038 3.5H1.5a.5.5 0 010-1H5v-1A1.5 1.5 0 016.5 0h3A1.5 1.5 0 0111 1.5zm-5 0v1h4v-1a.5.5 0 00-.5-.5h-3a.5.5 0 00-.5.5zM4.5 5.029l.5 8.5a.5.5 0 10.998-.06l-.5-8.5a.5.5 0 10-.998.06zm6.53-.528a.5.5 0 00-.528.47l-.5 8.5a.5.5 0 00.998.058l.5-8.5a.5.5 0 00-.47-.528zM8 4.5a.5.5 0 00-.5.5v8.5a.5.5 0 001 0V5a.5.5 0 00-.5-.5z"/></svg></button>
+                    <button class="btn-trash-confirm" onclick="markReviewed(this)" style="display:none" title="Confirm reviewed">&times;</button>
+                </td>
             </tr>
             {{end}}
             </tbody>
@@ -229,6 +330,33 @@
             </div>
         {{end}}
         </div>
+    </section>
+    {{end}}
+
+    {{if .OthersDrafts}}
+    <section class="section" data-section="others-drafts">
+        <details>
+            <summary class="section-header section-collapsible">Drafts (others) <span class="count">({{len .OthersDrafts}})</span></summary>
+            {{template "othersTable" (dict "PRs" .OthersDrafts "AuthorTeams" .AuthorTeams)}}
+        </details>
+    </section>
+    {{end}}
+
+    {{if .OthersApproved}}
+    <section class="section" data-section="others-approved">
+        <details>
+            <summary class="section-header section-collapsible">Approved (others) <span class="count">({{len .OthersApproved}})</span></summary>
+            {{template "othersTable" (dict "PRs" .OthersApproved "AuthorTeams" .AuthorTeams)}}
+        </details>
+    </section>
+    {{end}}
+
+    {{if .OthersSkipped}}
+    <section class="section" data-section="others-skipped">
+        <details>
+            <summary class="section-header section-collapsible">Skipped <span class="count">({{len .OthersSkipped}})</span></summary>
+            {{template "othersTable" (dict "PRs" .OthersSkipped "AuthorTeams" .AuthorTeams)}}
+        </details>
     </section>
     {{end}}
 

@@ -88,6 +88,18 @@ func (s *Syncer) Run(verbose bool, orgs []string) (*Summary, error) {
 			if err := s.store.UpsertPR(row); err != nil {
 				return nil, fmt.Errorf("upsert %s#%d: %w", repo, pr.Number, err)
 			}
+			// Track everyone who's authored or engaged on a PR we've seen
+			if row.Author != "" {
+				s.store.AddKnownAuthor(row.Author)
+			}
+			if row.EngagedUsers != nil {
+				var engaged []string
+				if err := json.Unmarshal([]byte(*row.EngagedUsers), &engaged); err == nil {
+					for _, u := range engaged {
+						s.store.AddKnownAuthor(u)
+					}
+				}
+			}
 			sum.Total++
 			switch row.TriageBucket {
 			case "needs_review":
@@ -223,6 +235,27 @@ func classify(pr github.PullRequestNode, viewer, repo, syncedAt string) *db.Pull
 		b, _ := json.Marshal(approvers)
 		s := string(b)
 		row.Approvers = &s
+	}
+
+	// Engaged users (reviewed or commented, excluding author and bots)
+	engagedSeen := map[string]bool{}
+	var engaged []string
+	for _, r := range pr.Reviews.Nodes {
+		if r.Author != nil && r.Author.Login != author && !isBot(r.Author.Login) && !engagedSeen[r.Author.Login] {
+			engagedSeen[r.Author.Login] = true
+			engaged = append(engaged, r.Author.Login)
+		}
+	}
+	for _, c := range pr.Comments.Nodes {
+		if c.Author != nil && c.Author.Login != author && !isBot(c.Author.Login) && !engagedSeen[c.Author.Login] {
+			engagedSeen[c.Author.Login] = true
+			engaged = append(engaged, c.Author.Login)
+		}
+	}
+	if len(engaged) > 0 {
+		b, _ := json.Marshal(engaged)
+		s := string(b)
+		row.EngagedUsers = &s
 	}
 
 	// Last reviewer activity

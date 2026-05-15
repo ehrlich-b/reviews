@@ -79,6 +79,20 @@ func New(store *db.Store, syncer *reviewsync.Syncer, orgs []string, cfg Config) 
 			}
 			return t.Unix()
 		},
+		"dict": func(pairs ...any) (map[string]any, error) {
+			if len(pairs)%2 != 0 {
+				return nil, fmt.Errorf("dict: odd number of args")
+			}
+			m := make(map[string]any, len(pairs)/2)
+			for i := 0; i < len(pairs); i += 2 {
+				key, ok := pairs[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict: non-string key at index %d", i)
+				}
+				m[key] = pairs[i+1]
+			}
+			return m, nil
+		},
 	}
 
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templatesFS, "templates/*.html"))
@@ -229,6 +243,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /", s.handleIndex)
+	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("POST /api/sync", s.handleSync)
 	s.mux.HandleFunc("GET /api/sync/status", s.handleSyncStatus)
 
@@ -509,13 +524,33 @@ func (s *Server) handleAdminSlackUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminGithubUsers(w http.ResponseWriter, r *http.Request) {
-	authors, err := s.store.ListPRAuthors()
+	known, err := s.store.ListKnownAuthors()
 	if err != nil {
 		http.Error(w, "internal error", 500)
 		return
 	}
+	mappings, err := s.store.ListSlackMappings()
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	seen := map[string]bool{}
+	users := make([]string, 0, len(known)+len(mappings))
+	for _, a := range known {
+		if !seen[a] {
+			seen[a] = true
+			users = append(users, a)
+		}
+	}
+	for _, m := range mappings {
+		if !seen[m.GithubUsername] {
+			seen[m.GithubUsername] = true
+			users = append(users, m.GithubUsername)
+		}
+	}
+	sort.Strings(users)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(authors)
+	json.NewEncoder(w).Encode(users)
 }
 
 // Nag system
@@ -683,6 +718,7 @@ type teamInfo struct {
 
 type dashboardData struct {
 	Viewer            string
+	Engaged           []*db.PullRequest
 	NeedsReview       []ticketGroup
 	NeedsReviewCount  int
 	AuthorsCourt      []ticketGroup
@@ -691,6 +727,9 @@ type dashboardData struct {
 	YourChanges       []*db.PullRequest
 	YourWaiting       []*db.PullRequest
 	YourPRsCount      int
+	OthersDrafts      []*db.PullRequest
+	OthersApproved    []*db.PullRequest
+	OthersSkipped     []*db.PullRequest
 	AllRepos          []string
 	RepoGroups        []repoGroup
 	TotalPRs          int
@@ -781,17 +820,33 @@ func buildDashboard(viewer string, prs []*db.PullRequest, repoCount, prCount int
 			default:
 				data.YourWaiting = append(data.YourWaiting, pr)
 			}
+		} else if viewer != "" && viewerEngaged(pr.EngagedUsers, viewer) {
+			data.Engaged = append(data.Engaged, pr)
 		} else {
-			if pr.TriageBucket == "needs_review" {
+			switch pr.TriageBucket {
+			case "needs_review":
 				needsReview = append(needsReview, pr)
-			} else if pr.TriageBucket == "author_court" {
+			case "author_court":
 				authorsCourt = append(authorsCourt, pr)
+			case "approved":
+				data.OthersApproved = append(data.OthersApproved, pr)
+			case "skipped":
+				if pr.Draft {
+					data.OthersDrafts = append(data.OthersDrafts, pr)
+				} else {
+					data.OthersSkipped = append(data.OthersSkipped, pr)
+				}
 			}
 		}
 	}
 
 	data.NeedsReview = groupByTicket(needsReview)
 	data.AuthorsCourt = groupByTicket(authorsCourt)
+
+	// Engaged: sort by most recent activity (updated_at desc)
+	sort.SliceStable(data.Engaged, func(i, j int) bool {
+		return data.Engaged[i].UpdatedAt > data.Engaged[j].UpdatedAt
+	})
 
 	// Enrich ticket groups with Jira data
 	if jiraIssues != nil {
@@ -833,6 +888,10 @@ func buildDashboard(viewer string, prs []*db.PullRequest, repoCount, prCount int
 	displayedPRs = append(displayedPRs, data.YourApproved...)
 	displayedPRs = append(displayedPRs, data.YourChanges...)
 	displayedPRs = append(displayedPRs, data.YourWaiting...)
+	displayedPRs = append(displayedPRs, data.Engaged...)
+	displayedPRs = append(displayedPRs, data.OthersDrafts...)
+	displayedPRs = append(displayedPRs, data.OthersApproved...)
+	displayedPRs = append(displayedPRs, data.OthersSkipped...)
 
 	repoSet := map[string]bool{}
 	repoOwner := map[string]string{}
@@ -1032,15 +1091,23 @@ func loc(additions, deletions int) string {
 }
 
 func approvedBy(approvers *string, viewer string) bool {
-	if approvers == nil || viewer == "" {
+	return userInJSONList(approvers, viewer)
+}
+
+func viewerEngaged(engagedUsers *string, viewer string) bool {
+	return userInJSONList(engagedUsers, viewer)
+}
+
+func userInJSONList(jsonList *string, user string) bool {
+	if jsonList == nil || user == "" {
 		return false
 	}
 	var list []string
-	if err := json.Unmarshal([]byte(*approvers), &list); err != nil {
+	if err := json.Unmarshal([]byte(*jsonList), &list); err != nil {
 		return false
 	}
-	for _, a := range list {
-		if a == viewer {
+	for _, u := range list {
+		if u == user {
 			return true
 		}
 	}
