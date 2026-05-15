@@ -816,35 +816,34 @@
             applyAllFilters();
         };
 
-        // Filter state persistence (URL params, localStorage fallback)
-        var FILTER_KEY = 'reviews-filters';
+        // Filter state persistence (URL params, localStorage fallback).
+        // localStorage stores the EXCLUDED repos so newly-discovered repos
+        // default to active. Old "reviews-filters" key (inclusion-based) is
+        // intentionally ignored; the v2 bump resets stale CI/drafts state too.
+        var FILTER_KEY = 'reviews-filters-v2';
         function saveFilterState(){
+            var allRepos = [];
             var activeRepos = [];
-            document.querySelectorAll('.repo-pill.active').forEach(function(el){ activeRepos.push(el.dataset.repo); });
+            document.querySelectorAll('.repo-pill').forEach(function(el){
+                allRepos.push(el.dataset.repo);
+                if(el.classList.contains('active')) activeRepos.push(el.dataset.repo);
+            });
+            var excludes = allRepos.filter(function(r){ return activeRepos.indexOf(r) < 0; });
             var activeTeams = [];
             document.querySelectorAll('.team-pill.active').forEach(function(el){ activeTeams.push(el.dataset.teamName); });
             var ci = document.getElementById('f-ci').value;
             var drafts = document.getElementById('f-drafts').checked;
 
-            // Save to localStorage as fallback
-            LS.setItem(FILTER_KEY, JSON.stringify({repos:activeRepos, ci:ci, drafts:drafts, teams:activeTeams}));
+            LS.setItem(FILTER_KEY, JSON.stringify({excludes:excludes, ci:ci, drafts:drafts, teams:activeTeams}));
 
-            // Update URL params
+            // Update URL params (URL still uses repos for shareable links)
             var params = new URLSearchParams(location.search);
-            // Always set repos
-            if(activeRepos.length > 0){
-                var allRepos = [];
-                document.querySelectorAll('.repo-pill').forEach(function(el){ allRepos.push(el.dataset.repo); });
-                if(activeRepos.length < allRepos.length) params.set('repos', activeRepos.join(','));
-                else params.delete('repos');
-            }
-            // CI
+            if(activeRepos.length < allRepos.length) params.set('repos', activeRepos.join(','));
+            else params.delete('repos');
             if(ci && ci !== 'all') params.set('ci', ci);
             else params.delete('ci');
-            // Drafts
             if(!drafts) params.set('drafts', '0');
             else params.delete('drafts');
-            // Teams
             if(activeTeams.length > 0) params.set('teams', activeTeams.join(','));
             else params.delete('teams');
 
@@ -857,7 +856,6 @@
             var fromURL = params.has('repos') || params.has('ci') || params.has('drafts') || params.has('teams');
 
             if(fromURL){
-                // Load from URL
                 if(params.has('repos')){
                     var repos = params.get('repos').split(',');
                     document.querySelectorAll('.repo-pill').forEach(function(el){
@@ -875,13 +873,11 @@
                     });
                 }
             } else {
-                // Fall back to localStorage
                 try{
                     var f = JSON.parse(LS.getItem(FILTER_KEY)||'{}');
-                    if(f.repos){
+                    if(f.excludes && f.excludes.length > 0){
                         document.querySelectorAll('.repo-pill').forEach(function(el){
-                            if(f.repos.indexOf(el.dataset.repo) >= 0) el.classList.add('active');
-                            else el.classList.remove('active');
+                            if(f.excludes.indexOf(el.dataset.repo) >= 0) el.classList.remove('active');
                         });
                     }
                     if(f.ci) document.getElementById('f-ci').value = f.ci;
@@ -959,6 +955,32 @@
                 if(!showDrafts && el.dataset.draft === 'true') hide = true;
                 if(hide) el.classList.add('filter-hidden');
                 else el.classList.remove('filter-hidden');
+            });
+
+            updateSectionCounts();
+        };
+
+        // Show visible/total in each section header. Total is captured once
+        // from the server-rendered text and cached in data-total.
+        window.updateSectionCounts = function(){
+            document.querySelectorAll('section.section').forEach(function(sec){
+                var span = sec.querySelector('.section-header > .count');
+                if(!span) span = sec.querySelector('summary.section-header > .count');
+                if(!span || span.id) return; // skip JS-managed (reviewed/dismissed)
+                if(!span.dataset.total){
+                    var m = (span.textContent || '').match(/(\d+)/);
+                    span.dataset.total = m ? m[1] : '0';
+                }
+                var visible = 0;
+                sec.querySelectorAll('.pr-row, .your-pr-row').forEach(function(r){
+                    if(!r.classList.contains('filter-hidden') &&
+                       !r.classList.contains('action-reviewed') &&
+                       !r.classList.contains('action-dismissed') &&
+                       !r.classList.contains('action-hidden')){
+                        visible++;
+                    }
+                });
+                span.textContent = '(' + visible + '/' + span.dataset.total + ')';
             });
         };
 
