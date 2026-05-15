@@ -142,6 +142,32 @@
             </div>
         </section>
 
+        {{if .Uncategorized}}
+        <section class="section">
+            <h2 class="section-header">Authors with open PRs not in any team ({{len .Uncategorized}})</h2>
+            <table>
+                <thead>
+                    <tr><th>GitHub User</th><th>Open PRs</th><th>Add to team</th></tr>
+                </thead>
+                <tbody>
+                {{range .Uncategorized}}
+                    {{$user := .Username}}
+                    <tr id="uncat-row-{{.Username}}">
+                        <td>{{.Username}}</td>
+                        <td>{{.PRCount}}</td>
+                        <td style="white-space:nowrap">
+                            <select id="uncat-team-{{.Username}}">
+                                {{range $.Teams}}<option value="{{.}}">{{.}}</option>{{end}}
+                            </select>
+                            <button class="btn btn-primary" onclick="addUncategorized('{{.Username}}')">Add</button>
+                        </td>
+                    </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </section>
+        {{end}}
+
         <section class="section">
             <h2 class="section-header">Slack Mappings</h2>
             <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
@@ -411,6 +437,11 @@
         };
         window.removeMember = function(team, user){
             api('DELETE','/api/admin/team/member?team='+encodeURIComponent(team)+'&user='+encodeURIComponent(user)).then(function(){ location.reload(); });
+        };
+        window.addUncategorized = function(user){
+            var sel = document.getElementById('uncat-team-'+user);
+            if(!sel || !sel.value) return;
+            api('POST','/api/admin/team/member',{team:sel.value,username:user}).then(function(){ location.reload(); });
         };
     })();
     </script>

@@ -385,12 +385,14 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	teams, _ := s.store.ListTeams()
 	memberships, _ := s.store.ListTeamMemberships()
 	slackMappings, _ := s.store.ListSlackMappings()
+	uncategorized, _ := s.store.ListUncategorizedAuthors()
 
 	type adminData struct {
 		Authed         bool
 		Teams          []string
 		Memberships    map[string][]string
 		SlackMappings  []db.SlackMapping
+		Uncategorized  []db.UncategorizedAuthor
 		HasSlackClient bool
 	}
 	data := adminData{
@@ -398,6 +400,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		Teams:          teams,
 		Memberships:    memberships,
 		SlackMappings:  slackMappings,
+		Uncategorized:  uncategorized,
 		HasSlackClient: s.slackClient != nil,
 	}
 

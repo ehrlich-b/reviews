@@ -402,6 +402,34 @@ func (s *Store) ListPRAuthors() ([]string, error) {
 	return authors, nil
 }
 
+type UncategorizedAuthor struct {
+	Username string
+	PRCount  int
+}
+
+func (s *Store) ListUncategorizedAuthors() ([]UncategorizedAuthor, error) {
+	rows, err := s.db.Query(`
+		SELECT author, COUNT(*)
+		FROM pull_requests
+		WHERE author != ''
+		  AND author NOT IN (SELECT username FROM team_memberships)
+		GROUP BY author
+		ORDER BY COUNT(*) DESC, author ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list uncategorized authors: %w", err)
+	}
+	defer rows.Close()
+	var out []UncategorizedAuthor
+	for rows.Next() {
+		var a UncategorizedAuthor
+		if err := rows.Scan(&a.Username, &a.PRCount); err != nil {
+			return nil, fmt.Errorf("scan uncategorized author: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetSyncInfo() (repoCount int, prCount int, lastSync string, err error) {
 	err = s.db.QueryRow("SELECT COUNT(*) FROM sync_state").Scan(&repoCount)
 	if err != nil {
